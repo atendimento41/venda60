@@ -83,7 +83,10 @@ export default function UnikDashMesPage() {
   return (
     <AppShell title="UNIK · Dashboard mês">
       <p className="muted">
-        Só subcategoria UNIK 3D. Encomenda não entra nos gráficos de venda — vai no gráfico Encomenda 60. Valores UNIK = custo UNIK + (venda ÷ 2) − custo 60. Valores 60 = custo 60 + (venda ÷ 2). Os gráficos começam em fev/26. Até jul/26, sem custo UNIK os dois valores são a mesma linha (metade da venda).
+        Dois mundos diferentes: <strong>Valores UNIK / 60</strong> = vendas UNIK 3D da loja (Meep).{" "}
+        <strong>Encomenda 60</strong> = lançamentos com status Encomenda (mesmo cálculo do Relatório
+        encomendas: maior entre custo e sugestão × quantidade). Encomenda não entra nos gráficos de
+        venda.
       </p>
 
       <div className="filters">
@@ -182,9 +185,9 @@ export default function UnikDashMesPage() {
           </KpiGrid>
           {encomendasSemCusto > 0 && (
             <p className="aviso">
-              {encomendasSemCusto} lançamento(s) de encomenda ({encomendasQtd} un.) com custo R$ 0 — por isso o
-              gráfico Encomenda 60 fica zerado. Informe o custo em{" "}
-              <a href="/unik-editar-lancamento">Edição lançamento</a> (é o valor total que a 60 paga à UNIK).
+              {encomendasSemCusto} lançamento(s) de encomenda ({encomendasQtd} un.) sem custo nem sugestão de
+              venda — esses ficam fora do total Encomenda 60. Informe em{" "}
+              <a href="/unik-editar-lancamento">Edição lançamento</a>.
             </p>
           )}
 
@@ -209,13 +212,13 @@ export default function UnikDashMesPage() {
             yMax={yMaxValores}
           />
           <TrendChart
-            title="Valores UNIK por mês"
+            title="Valores UNIK por mês (vendas da loja · Meep)"
             labels={porMes.map((m) => m.label)}
             series={[{ name: "Valores UNIK", color: "#3fa34d", values: porMes.map((m) => m.lucroUnik) }]}
             yMax={yMaxValores}
           />
           <TrendChart
-            title="Encomenda 60"
+            title="Encomenda 60 (lançamentos Encomenda · igual ao relatório)"
             labels={porMesEncomenda.map((m) => m.label)}
             series={[{ name: "Encomenda 60", color: "#7c5cbf", values: porMesEncomenda.map((m) => m.lucro60) }]}
           />

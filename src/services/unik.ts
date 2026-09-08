@@ -1411,7 +1411,10 @@ async function listarVendasUnik60Store(filtros: {
     const item = itemPorSku[normalizeUpper(row.sku)];
     const qtd = Number(row.quantidade) || 1;
     const custoTotal = roundMoney(Number(row.custo) || 0);
-    const custoUnikEnc = custoTotal > 0 ? custoTotal : null;
+    const sugestao = roundMoney(Number(row.sugestaoVenda) || 0);
+    // Mesma regra do Relatório encomendas: max(custo, sugestão) × qtd
+    const valorEnc = valorFinalEncomenda(custoTotal, sugestao, qtd);
+    const valorEncOuNull = valorEnc > 0 ? valorEnc : null;
     linhas.push({
       id: -Math.abs(row.id || 0) || -linhas.length - 1,
       data: ymd,
@@ -1425,10 +1428,10 @@ async function listarVendasUnik60Store(filtros: {
       quantidade: qtd,
       valorVenda: 0,
       totalVendido: 0,
-      custoUnik: custoUnikEnc,
+      custoUnik: valorEncOuNull,
       custo60: 0,
-      lucroUnik: custoUnikEnc ?? 0,
-      lucro60: custoUnikEnc ?? 0,
+      lucroUnik: valorEnc,
+      lucro60: valorEnc,
       encomenda: true,
     });
   }
