@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+
+# Next.js
+.next/
+out/
+
+# Environment (nunca subir)
+.env
+.env.local
+.env.*.local
+
+# SQLite legado / cache local
+data/
+*.db
+*.db-*
+
+# Build / cache
+tsconfig.tsbuildinfo
+*.log
+npm-debug.log*
+.drizzle/
+
+# Dados de importação (CSV/XLSX reais — use localmente)
+import-data/*.csv
+import-data/*.xlsx
+!import-data/.gitkeep
+
+# Arquivos temporários de teste
+body.json
+cookies*.txt
+
+# Vercel CLI local
+.vercel
+
+# OS
+.DS_Store
+Thumbs.db

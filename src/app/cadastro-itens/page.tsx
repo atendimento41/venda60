@@ -1,0 +1,411 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import AppShell from "@/components/AppShell";
+import { formatMoeda, asArray, comprimirFoto, UNIDADES } from "@/lib/client";
+
+type Item = {
+  sku: string;
+  descricao: string;
+  categoriaDash: string;
+  subcategoriaMeep: string;
+  preco: number;
+  custo: number;
+  sugestaoVenda: number;
+  nomeUnik: string;
+  ativo: boolean;
+  fotoUrl: string;
+  ilimitado?: boolean;
+  unidades?: string[];
+};
+
+type PendenteUnik = {
+  nome: string;
+  quantidade: number;
+  dataFmt: string;
+  custo: number;
+  sugestaoVenda: number;
+  fotoUnik?: string;
+};
+
+const VAZIO = {
+  sku: "",
+  descricao: "",
+  categoriaDash: "",
+  subcategoriaMeep: "",
+  preco: "",
+  nomeUnik: "",
+  ativo: true,
+  fotoUrl: "",
+  ilimitado: false,
+  custo: 0,
+  sugestaoVenda: 0,
+  unidades: [] as string[],
+};
+
+function rotuloPhoto(s: string): boolean {
+  const t = String(s || "")
+    .trim()
+    .toUpperCase();
+  return t === "PHOTO" || t.startsWith("PHOTO ");
+}
+
+function unicos(valores: string[]) {
+  return [...new Set(valores.map((v) => v.trim()).filter(Boolean))].sort((a, b) =>
+    a.localeCompare(b, "pt-BR")
+  );
+}
+
+function ValorLeitura({ valor }: { valor: number }) {
+  return (
+    <div className="valor-leitura">
+      R$ {formatMoeda(valor || 0)}
+    </div>
+  );
+}
+
+export default function CadastroItensPage() {
+  const [lista, setLista] = useState<Item[]>([]);
+  const [pendentesUnik, setPendentesUnik] = useState<PendenteUnik[]>([]);
+  const [form, setForm] = useState(VAZIO);
+  const [msg, setMsg] = useState("");
+  const [erro, setErro] = useState("");
+
+  async function carregar() {
+    const [itensRes, unikRes] = await Promise.all([
+      fetch("/api/itens").then((r) => r.json()),
+      fetch("/api/unik?tipo=pendentes&todos=1").then((r) => r.json()),
+    ]);
+    setLista(asArray(itensRes));
+    setPendentesUnik(asArray(unikRes?.nomesPendentes) as PendenteUnik[]);
+  }
+
+  useEffect(() => {
+    carregar();
+  }, []);
+
+  const categorias = useMemo(() => {
+    const vals = unicos(lista.map((i) => i.categoriaDash));
+    if (form.categoriaDash && !vals.includes(form.categoriaDash)) vals.push(form.categoriaDash);
+    return vals;
+  }, [lista, form.categoriaDash]);
+
+  const editando = Boolean(form.sku && lista.some((i) => i.sku === form.sku));
+
+  const subcategorias = useMemo(() => {
+    const daCat = lista
+      .filter((i) => !form.categoriaDash || i.categoriaDash === form.categoriaDash)
+      .map((i) => i.subcategoriaMeep);
+    const vals = unicos(daCat.length ? daCat : lista.map((i) => i.subcategoriaMeep));
+    if (form.subcategoriaMeep && !vals.includes(form.subcategoriaMeep)) {
+      vals.push(form.subcategoriaMeep);
+    }
+    return vals;
+  }, [lista, form.categoriaDash, form.subcategoriaMeep]);
+
+  const opcoesUnik = useMemo(() => {
+    const map = new Map<string, PendenteUnik>();
+    for (const p of pendentesUnik) map.set(p.nome, p);
+    if (form.nomeUnik && !map.has(form.nomeUnik)) {
+      map.set(form.nomeUnik, {
+        nome: form.nomeUnik,
+        quantidade: 0,
+        dataFmt: "",
+        custo: form.custo,
+        sugestaoVenda: form.sugestaoVenda,
+      });
+    }
+    return [...map.values()].sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+  }, [pendentesUnik, form.nomeUnik, form.custo, form.sugestaoVenda]);
+
+  const pendenteSelecionado = useMemo(
+    () => opcoesUnik.find((p) => p.nome === form.nomeUnik),
+    [opcoesUnik, form.nomeUnik]
+  );
+
+  const custoExibido = pendenteSelecionado?.custo ?? form.custo ?? 0;
+  const sugestaoExibida = pendenteSelecionado?.sugestaoVenda ?? form.sugestaoVenda ?? 0;
+  const photoIlimitado =
+    rotuloPhoto(form.categoriaDash) || rotuloPhoto(form.subcategoriaMeep);
+
+  function selecionarUnik(nome: string) {
+    const p = opcoesUnik.find((x) => x.nome === nome);
+    setForm((f) => ({
+      ...f,
+      nomeUnik: nome,
+      custo: p?.custo ?? 0,
+      sugestaoVenda: p?.sugestaoVenda ?? 0,
+      fotoUrl: f.fotoUrl || p?.fotoUnik || f.fotoUrl,
+      descricao: f.descricao || nome,
+    }));
+  }
+
+  async function salvar() {
+    setErro("");
+    setMsg("");
+    if (!form.categoriaDash || !form.subcategoriaMeep) {
+      setErro("Selecione categoria e subcategoria.");
+      return;
+    }
+    if (!form.descricao.trim()) {
+      setErro("Informe a descrição do item.");
+      return;
+    }
+    const res = await fetch("/api/itens", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sku: form.sku || undefined,
+        descricao: form.descricao,
+        categoriaDash: form.categoriaDash,
+        subcategoriaMeep: form.subcategoriaMeep,
+        preco: Number(String(form.preco).replace(",", ".")) || 0,
+        ativo: form.ativo,
+        fotoUrl: form.fotoUrl,
+        ilimitado: form.ilimitado,
+        nomeUnik: form.nomeUnik || undefined,
+        unidades: form.unidades,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      setErro(data.error || "Falha ao salvar");
+      return;
+    }
+    setMsg(data.message || "Item salvo.");
+    setForm(VAZIO);
+    carregar();
+  }
+
+  async function onFoto(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setErro("");
+    try {
+      const dataUrl = await comprimirFoto(file);
+      setForm((f) => ({ ...f, fotoUrl: dataUrl }));
+    } catch (err) {
+      setErro(err instanceof Error ? err.message : "Falha ao anexar foto");
+    }
+  }
+
+  function abrirItem(i: Item) {
+    setForm({
+      sku: i.sku,
+      descricao: i.descricao,
+      categoriaDash: i.categoriaDash,
+      subcategoriaMeep: i.subcategoriaMeep,
+      preco: String(i.preco),
+      nomeUnik: i.nomeUnik || "",
+      ativo: i.ativo,
+      fotoUrl: i.fotoUrl || "",
+      ilimitado: Boolean(i.ilimitado),
+      custo: i.custo ?? 0,
+      sugestaoVenda: i.sugestaoVenda ?? 0,
+      unidades: i.unidades || [],
+    });
+    setErro("");
+    setMsg("");
+  }
+
+  function toggleUnidade(u: string) {
+    setForm((f) => ({
+      ...f,
+      unidades: f.unidades.includes(u) ? f.unidades.filter((x) => x !== u) : [...f.unidades, u],
+    }));
+  }
+
+  return (
+    <AppShell title="Cadastro de Itens">
+      <div className="grid-2">
+        <section>
+          <h2>{editando ? "Editar item" : "Novo item"}</h2>
+          <div className="field">
+            <label>Item UNIK</label>
+            <select value={form.nomeUnik} onChange={(e) => selecionarUnik(e.target.value)}>
+              <option value="">Sem vínculo UNIK</option>
+              {opcoesUnik.map((p) => (
+                <option key={p.nome} value={p.nome}>
+                  {p.nome}
+                  {p.quantidade > 0 ? ` · qtd ${p.quantidade}` : ""}
+                  {p.dataFmt ? ` · ${p.dataFmt}` : ""}
+                </option>
+              ))}
+            </select>
+            <p className="muted">
+              Selecione um nome UNIK para vincular ao salvar. Lista todos os nomes já lançados.
+            </p>
+          </div>
+          <div className="field">
+            <label>Descrição</label>
+            <input
+              value={form.descricao}
+              onChange={(e) => setForm({ ...form, descricao: e.target.value })}
+            />
+          </div>
+          <div className="field">
+            <label>Categoria</label>
+            <select
+              value={form.categoriaDash}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  categoriaDash: e.target.value,
+                  subcategoriaMeep: "",
+                  ilimitado: rotuloPhoto(e.target.value) || form.ilimitado,
+                })
+              }
+            >
+              <option value="">Selecione</option>
+              {categorias.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="field">
+            <label>Subcategoria</label>
+            <select
+              value={form.subcategoriaMeep}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  subcategoriaMeep: e.target.value,
+                  ilimitado: rotuloPhoto(form.categoriaDash) || rotuloPhoto(e.target.value) || form.ilimitado,
+                })
+              }
+            >
+              <option value="">Selecione</option>
+              {subcategorias.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="field">
+            <label>Sugestão UNIK</label>
+            <ValorLeitura valor={sugestaoExibida} />
+          </div>
+          <div className="field">
+            <label>Custo UNIK</label>
+            <ValorLeitura valor={custoExibido} />
+          </div>
+          <div className="field">
+            <label>Preço de venda</label>
+            <input
+              value={form.preco}
+              onChange={(e) => setForm({ ...form, preco: e.target.value })}
+              inputMode="decimal"
+              placeholder="0,00"
+            />
+          </div>
+          <label className="check-inline">
+            <input
+              type="checkbox"
+              checked={form.ilimitado || photoIlimitado}
+              disabled={photoIlimitado}
+              onChange={(e) => setForm({ ...form, ilimitado: e.target.checked })}
+            />
+            Estoque ilimitado (sem quantidade)
+            {photoIlimitado ? " · PHOTO" : ""}
+          </label>
+
+          <p style={{ fontWeight: "bold", margin: "12px 0 8px" }}>Unidades do item</p>
+          <p className="muted">
+            Nenhuma marcada: disponível em todas. Com unidade marcada, só aparece/vende nessas lojas
+            (além do estoque).
+          </p>
+          {UNIDADES.map((u) => (
+            <label className="check-inline" key={u}>
+              <input
+                type="checkbox"
+                checked={form.unidades.includes(u)}
+                onChange={() => toggleUnidade(u)}
+              />
+              {u}
+            </label>
+          ))}
+
+          <div className="field">
+            <label>Foto do item</label>
+            <input type="file" accept="image/*" onChange={onFoto} />
+            <p className="muted">A foto é redimensionada e gravada no banco (não precisa de pasta de arquivos).</p>
+          </div>
+          {form.fotoUrl && (
+            <div className="foto-preview">
+              <img src={form.fotoUrl} alt="Prévia do item" />
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setForm({ ...form, fotoUrl: "" })}
+              >
+                Remover foto
+              </button>
+            </div>
+          )}
+          <button className="btn btn-block" onClick={salvar}>
+            {editando ? "Salvar alterações" : "Salvar item"}
+          </button>
+          {editando && (
+            <button className="btn btn-secondary btn-block" type="button" onClick={() => setForm(VAZIO)}>
+              Novo item
+            </button>
+          )}
+          {msg && <p className="msg-ok">{msg}</p>}
+          {erro && <p className="msg-erro">{erro}</p>}
+        </section>
+        <section>
+          <h2>Itens cadastrados ({lista.length})</h2>
+          <div style={{ overflowX: "auto" }}>
+            <table>
+              <thead>
+                <tr>
+                  <th></th>
+                  <th>Descrição</th>
+                  <th>Unidades</th>
+                  <th>UNIK</th>
+                  <th>Categoria</th>
+                  <th className="num">Preço</th>
+                  <th className="num">Sugestão</th>
+                  <th className="num">Custo</th>
+                </tr>
+              </thead>
+              <tbody>
+                {lista.map((i) => (
+                  <tr key={i.sku} style={{ cursor: "pointer" }} onClick={() => abrirItem(i)}>
+                    <td>
+                      {i.fotoUrl ? (
+                        <img className="foto-thumb" src={i.fotoUrl} alt="" />
+                      ) : (
+                        <span className="muted">—</span>
+                      )}
+                    </td>
+                    <td>
+                      {i.descricao}
+                      {i.ilimitado ? <span className="muted"> · ilimitado</span> : ""}
+                    </td>
+                    <td>
+                      {!i.unidades?.length ? (
+                        <span className="muted">Todas</span>
+                      ) : (
+                        i.unidades.join(", ")
+                      )}
+                    </td>
+                    <td>{i.nomeUnik || <span className="muted">—</span>}</td>
+                    <td>{i.categoriaDash}</td>
+                    <td className="num">R$ {formatMoeda(i.preco)}</td>
+                    <td className="num">R$ {formatMoeda(i.sugestaoVenda || 0)}</td>
+                    <td className="num">R$ {formatMoeda(i.custo || 0)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </AppShell>
+  );
+}
