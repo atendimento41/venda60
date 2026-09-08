@@ -158,21 +158,28 @@ export default function UsuariosPage() {
             </p>
           </div>
 
-          <p style={{ fontWeight: "bold", marginBottom: 8 }}>Unidades liberadas</p>
+          <p style={{ fontWeight: "bold", marginBottom: 8 }}>Vincular a unidade(s)</p>
           <p className="muted">
-            Nenhuma marcada: lança em todas as lojas. Com unidade marcada, só pode lançar venda/PRIME
-            nela.
+            Marque a loja deste login. Sem marca = todas. Com marca (ex.: só PKS), ele só lança
+            venda/PRIME nessa unidade.
           </p>
-          {UNIDADES.map((u) => (
-            <label className="check-inline" key={u}>
-              <input
-                type="checkbox"
-                checked={form.unidades.includes(u)}
-                onChange={() => toggleUnidade(u)}
-              />
-              {u}
-            </label>
-          ))}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginBottom: 8 }}>
+            {UNIDADES.map((u) => (
+              <label className="check-inline" key={u} style={{ minWidth: 100 }}>
+                <input
+                  type="checkbox"
+                  checked={form.unidades.includes(u)}
+                  onChange={() => toggleUnidade(u)}
+                />
+                {u}
+              </label>
+            ))}
+          </div>
+          {form.unidades.length > 0 && (
+            <p className="msg-ok" style={{ marginTop: 0 }}>
+              Restrito a: {form.unidades.join(", ")}
+            </p>
+          )}
 
           <p style={{ fontWeight: "bold", marginBottom: 8, marginTop: 16 }}>Abas liberadas</p>
           <label className="check-inline" style={{ marginBottom: 12 }}>
