@@ -70,6 +70,9 @@ export default function CadastroItensPage() {
   const [form, setForm] = useState(VAZIO);
   const [msg, setMsg] = useState("");
   const [erro, setErro] = useState("");
+  const [filtroCat, setFiltroCat] = useState("");
+  const [filtroSub, setFiltroSub] = useState("");
+  const [filtroUnidade, setFiltroUnidade] = useState("");
 
   async function carregar() {
     const [itensRes, unikRes] = await Promise.all([
@@ -83,6 +86,12 @@ export default function CadastroItensPage() {
   useEffect(() => {
     carregar();
   }, []);
+
+  /** SKU-0007 > SKU-0006 — proxy de “mais recentemente adicionado”. */
+  function ordemSku(sku: string): number {
+    const m = /^SKU-(\d+)$/i.exec(sku);
+    return m ? Number(m[1]) : 0;
+  }
 
   const categorias = useMemo(() => {
     const vals = unicos(lista.map((i) => i.categoriaDash));
@@ -102,6 +111,39 @@ export default function CadastroItensPage() {
     }
     return vals;
   }, [lista, form.categoriaDash, form.subcategoriaMeep]);
+
+  const categoriasFiltro = useMemo(
+    () => unicos(lista.map((i) => i.categoriaDash)),
+    [lista]
+  );
+
+  const subcategoriasFiltro = useMemo(() => {
+    const base = lista.filter((i) => !filtroCat || i.categoriaDash === filtroCat);
+    return unicos(base.map((i) => i.subcategoriaMeep));
+  }, [lista, filtroCat]);
+
+  const listaFiltrada = useMemo(() => {
+    return lista
+      .filter((i) => {
+        if (filtroCat && i.categoriaDash !== filtroCat) return false;
+        if (filtroSub && i.subcategoriaMeep !== filtroSub) return false;
+        if (filtroUnidade) {
+          const u = i.unidades || [];
+          // sem unidade marcada = todas as lojas → entra em qualquer filtro de unidade
+          if (u.length > 0 && !u.includes(filtroUnidade)) return false;
+        }
+        return true;
+      })
+      .slice()
+      .sort((a, b) => {
+        const diff = ordemSku(b.sku) - ordemSku(a.sku);
+        if (diff !== 0) return diff;
+        return b.sku.localeCompare(a.sku, "pt-BR");
+      });
+  }, [lista, filtroCat, filtroSub, filtroUnidade]);
+
+  const listaTabela = useMemo(() => listaFiltrada.slice(0, 20), [listaFiltrada]);
+  const temMais = listaFiltrada.length > listaTabela.length;
 
   const opcoesUnik = useMemo(() => {
     const map = new Map<string, PendenteUnik>();
@@ -358,7 +400,72 @@ export default function CadastroItensPage() {
           {erro && <p className="msg-erro">{erro}</p>}
         </section>
         <section>
-          <h2>Itens cadastrados ({lista.length})</h2>
+          <h2>
+            Itens cadastrados{" "}
+            <span className="muted" style={{ fontWeight: 400, fontSize: "0.9rem" }}>
+              ({listaTabela.length}
+              {temMais ? ` de ${listaFiltrada.length}` : ""}
+              {listaFiltrada.length !== lista.length ? ` · filtro` : ""} · {lista.length} no total)
+            </span>
+          </h2>
+          <p className="muted" style={{ marginTop: 0 }}>
+            Lista geral: 20 últimos adicionados. Use os filtros para achar os demais.
+          </p>
+          <div className="filters" style={{ marginBottom: 12 }}>
+            <div className="field">
+              <label>Categoria</label>
+              <select
+                value={filtroCat}
+                onChange={(e) => {
+                  setFiltroCat(e.target.value);
+                  setFiltroSub("");
+                }}
+              >
+                <option value="">Todas</option>
+                {categoriasFiltro.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="field">
+              <label>Subcategoria</label>
+              <select value={filtroSub} onChange={(e) => setFiltroSub(e.target.value)}>
+                <option value="">Todas</option>
+                {subcategoriasFiltro.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="field">
+              <label>Unidade</label>
+              <select value={filtroUnidade} onChange={(e) => setFiltroUnidade(e.target.value)}>
+                <option value="">Todas</option>
+                {UNIDADES.map((u) => (
+                  <option key={u} value={u}>
+                    {u}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {(filtroCat || filtroSub || filtroUnidade) && (
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{ alignSelf: "flex-end" }}
+                onClick={() => {
+                  setFiltroCat("");
+                  setFiltroSub("");
+                  setFiltroUnidade("");
+                }}
+              >
+                Limpar filtros
+              </button>
+            )}
+          </div>
           <div style={{ overflowX: "auto" }}>
             <table>
               <thead>
@@ -368,42 +475,58 @@ export default function CadastroItensPage() {
                   <th>Unidades</th>
                   <th>UNIK</th>
                   <th>Categoria</th>
+                  <th>Subcategoria</th>
                   <th className="num">Preço</th>
                   <th className="num">Sugestão</th>
                   <th className="num">Custo</th>
                 </tr>
               </thead>
               <tbody>
-                {lista.map((i) => (
-                  <tr key={i.sku} style={{ cursor: "pointer" }} onClick={() => abrirItem(i)}>
-                    <td>
-                      {i.fotoUrl ? (
-                        <img className="foto-thumb" src={i.fotoUrl} alt="" />
-                      ) : (
-                        <span className="muted">—</span>
-                      )}
+                {listaTabela.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="muted">
+                      Nenhum item com esses filtros.
                     </td>
-                    <td>
-                      {i.descricao}
-                      {i.ilimitado ? <span className="muted"> · ilimitado</span> : ""}
-                    </td>
-                    <td>
-                      {!i.unidades?.length ? (
-                        <span className="muted">Todas</span>
-                      ) : (
-                        i.unidades.join(", ")
-                      )}
-                    </td>
-                    <td>{i.nomeUnik || <span className="muted">—</span>}</td>
-                    <td>{i.categoriaDash}</td>
-                    <td className="num">R$ {formatMoeda(i.preco)}</td>
-                    <td className="num">R$ {formatMoeda(i.sugestaoVenda || 0)}</td>
-                    <td className="num">R$ {formatMoeda(i.custo || 0)}</td>
                   </tr>
-                ))}
+                ) : (
+                  listaTabela.map((i) => (
+                    <tr key={i.sku} style={{ cursor: "pointer" }} onClick={() => abrirItem(i)}>
+                      <td>
+                        {i.fotoUrl ? (
+                          <img className="foto-thumb" src={i.fotoUrl} alt="" />
+                        ) : (
+                          <span className="muted">—</span>
+                        )}
+                      </td>
+                      <td>
+                        {i.descricao}
+                        {i.ilimitado ? <span className="muted"> · ilimitado</span> : ""}
+                      </td>
+                      <td>
+                        {!i.unidades?.length ? (
+                          <span className="muted">Todas</span>
+                        ) : (
+                          i.unidades.join(", ")
+                        )}
+                      </td>
+                      <td>{i.nomeUnik || <span className="muted">—</span>}</td>
+                      <td>{i.categoriaDash}</td>
+                      <td>{i.subcategoriaMeep}</td>
+                      <td className="num">R$ {formatMoeda(i.preco)}</td>
+                      <td className="num">R$ {formatMoeda(i.sugestaoVenda || 0)}</td>
+                      <td className="num">R$ {formatMoeda(i.custo || 0)}</td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
+          {temMais && (
+            <p className="muted" style={{ marginTop: 8 }}>
+              + {listaFiltrada.length - listaTabela.length} item(ns) não exibidos — refine o filtro
+              para localizar.
+            </p>
+          )}
         </section>
       </div>
     </AppShell>
