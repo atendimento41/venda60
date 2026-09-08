@@ -64,12 +64,22 @@ function ValorLeitura({ valor }: { valor: number }) {
   );
 }
 
+function normalizarBusca(s: string): string {
+  return String(s || "")
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .toUpperCase();
+}
+
 export default function CadastroItensPage() {
   const [lista, setLista] = useState<Item[]>([]);
   const [pendentesUnik, setPendentesUnik] = useState<PendenteUnik[]>([]);
   const [form, setForm] = useState(VAZIO);
   const [msg, setMsg] = useState("");
   const [erro, setErro] = useState("");
+  const [filtroNome, setFiltroNome] = useState("");
   const [filtroCat, setFiltroCat] = useState("");
   const [filtroSub, setFiltroSub] = useState("");
   const [filtroUnidade, setFiltroUnidade] = useState("");
@@ -123,8 +133,15 @@ export default function CadastroItensPage() {
   }, [lista, filtroCat]);
 
   const listaFiltrada = useMemo(() => {
+    const nome = normalizarBusca(filtroNome);
     return lista
       .filter((i) => {
+        if (nome) {
+          const hay = normalizarBusca(
+            [i.descricao, i.sku, i.nomeUnik, i.categoriaDash, i.subcategoriaMeep].join(" ")
+          );
+          if (!hay.includes(nome)) return false;
+        }
         if (filtroCat && i.categoriaDash !== filtroCat) return false;
         if (filtroSub && i.subcategoriaMeep !== filtroSub) return false;
         if (filtroUnidade) {
@@ -140,7 +157,7 @@ export default function CadastroItensPage() {
         if (diff !== 0) return diff;
         return b.sku.localeCompare(a.sku, "pt-BR");
       });
-  }, [lista, filtroCat, filtroSub, filtroUnidade]);
+  }, [lista, filtroNome, filtroCat, filtroSub, filtroUnidade]);
 
   const listaTabela = useMemo(() => listaFiltrada.slice(0, 20), [listaFiltrada]);
   const temMais = listaFiltrada.length > listaTabela.length;
@@ -409,8 +426,17 @@ export default function CadastroItensPage() {
             </span>
           </h2>
           <p className="muted" style={{ marginTop: 0 }}>
-            Lista geral: 20 últimos adicionados. Use os filtros para achar os demais.
+            Lista geral: 20 últimos. Digite o nome para filtrar na hora.
           </p>
+          <div className="field" style={{ marginBottom: 10 }}>
+            <label>Buscar por nome</label>
+            <input
+              value={filtroNome}
+              onChange={(e) => setFiltroNome(e.target.value)}
+              placeholder="Digite descrição, SKU ou UNIK…"
+              autoComplete="off"
+            />
+          </div>
           <div className="filters" style={{ marginBottom: 12 }}>
             <div className="field">
               <label>Categoria</label>
@@ -451,12 +477,13 @@ export default function CadastroItensPage() {
                 ))}
               </select>
             </div>
-            {(filtroCat || filtroSub || filtroUnidade) && (
+            {(filtroNome || filtroCat || filtroSub || filtroUnidade) && (
               <button
                 type="button"
                 className="btn btn-secondary"
                 style={{ alignSelf: "flex-end" }}
                 onClick={() => {
+                  setFiltroNome("");
                   setFiltroCat("");
                   setFiltroSub("");
                   setFiltroUnidade("");
