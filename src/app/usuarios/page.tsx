@@ -140,27 +140,42 @@ export default function UsuariosPage() {
           <h2 style={{ fontSize: 16 }}>{form.id ? "Editar usuário" : "Novo usuário"}</h2>
           <div className="field">
             <label>Nome</label>
-            <input value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} />
+            <input
+              value={form.nome}
+              placeholder="ex: Felipe Travassos"
+              onChange={(e) => setForm({ ...form, nome: e.target.value })}
+            />
           </div>
           <div className="field">
             <label>Usuário (login)</label>
             <input
               value={form.login}
               disabled={!!form.id}
-              placeholder="ex: joao"
-              onChange={(e) => setForm({ ...form, login: e.target.value })}
+              placeholder="ex: felipe.travassos"
+              onChange={(e) => {
+                const v = e.target.value;
+                setForm((f) => {
+                  const next = { ...f, login: v };
+                  // Se colar e-mail no login, preenche o campo e-mail automaticamente
+                  if (v.includes("@") && !f.email) next.email = v.trim().toLowerCase();
+                  return next;
+                });
+              }}
             />
+            <p className="muted" style={{ fontSize: "0.85rem", marginTop: 4 }}>
+              Sem @. Se colar um e-mail aqui, viramos login (antes do @) + e-mail pessoal.
+            </p>
           </div>
           <div className="field">
-            <label>E-mail pessoal (opcional)</label>
+            <label>E-mail pessoal (Google / verificação)</label>
             <input
               type="email"
               value={form.email}
-              placeholder="ex: joao@gmail.com"
+              placeholder="ex: felipe.travassos@gmail.com"
               onChange={(e) => setForm({ ...form, email: e.target.value })}
             />
             <p className="muted" style={{ fontSize: "0.85rem", marginTop: 4 }}>
-              Se informado, enviamos um link para confirmar o e-mail (não bloqueia o login).
+              Obrigatório para Entrar com Google. Pode confirmar por link SMTP depois.
             </p>
           </div>
           <div className="field">

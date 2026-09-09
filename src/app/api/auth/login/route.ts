@@ -38,12 +38,15 @@ export async function POST(req: Request) {
 
     await ensureUsuariosTable();
     if (!login || !senha) {
-      return NextResponse.json({ error: "Informe usuário e senha." }, { status: 400 });
+      return NextResponse.json({ error: "Informe usuário (ou e-mail) e senha." }, { status: 400 });
     }
 
     const rs = await getClient().execute({
-      sql: "SELECT * FROM usuarios WHERE lower(login) = ? LIMIT 1",
-      args: [login],
+      sql: `SELECT * FROM usuarios
+            WHERE lower(login) = ?
+               OR (email IS NOT NULL AND lower(email) = ?)
+            LIMIT 1`,
+      args: [login, login],
     });
     const user = rs.rows?.[0] as
       | {

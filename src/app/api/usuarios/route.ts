@@ -13,15 +13,8 @@ import {
   limparEmailUsuario,
   normalizarEmail,
   statusEmailUsuario,
-  validarEmail,
 } from "@/lib/email-verificacao";
-
-function normalizarLogin(v: string) {
-  return String(v || "")
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, "");
-}
+import { resolverLoginEEmail } from "@/lib/login-email";
 
 function serializarPaginas(raw: unknown): string {
   if (raw === "*" || raw === true) return "*";
@@ -73,22 +66,19 @@ export async function POST(req: Request) {
   if (isResp(gate)) return gate;
   try {
     const body = await req.json();
-    const login = normalizarLogin(body.login);
+    const resolvido = resolverLoginEEmail({
+      login: String(body.login || ""),
+      email: body.email ?? "",
+    });
+    const login = resolvido.login;
+    const emailRaw = resolvido.email;
     const nome = String(body.nome || "").trim();
     const senha = String(body.senha || "");
     const paginas = serializarPaginas(body.todas ? "*" : body.paginas);
     const unidades = serializarUnidades(body.unidades ?? []);
     const ativo = body.ativo !== false;
-    const emailRaw = body.email != null ? normalizarEmail(body.email) : undefined;
 
     if (!nome) throw new Error("Nome obrigatório.");
-    if (!login) throw new Error("Usuário obrigatório (sem espaços).");
-    if (!/^[a-z0-9._-]+$/.test(login)) {
-      throw new Error("Usuário só pode ter letras, números, ponto, _ ou -.");
-    }
-    if (emailRaw !== undefined && emailRaw && !validarEmail(emailRaw)) {
-      throw new Error("E-mail pessoal inválido.");
-    }
 
     const client = getClient();
     let avisoEmail: string | undefined;
@@ -97,11 +87,17 @@ export async function POST(req: Request) {
     if (body.id) {
       const id = Number(body.id);
       const atual = await client.execute({
-        sql: "SELECT paginas, unidades, ativo, email FROM usuarios WHERE id = ? LIMIT 1",
+        sql: "SELECT login, paginas, unidades, ativo, email FROM usuarios WHERE id = ? LIMIT 1",
         args: [id],
       });
       const row = atual.rows[0] as
-        | { paginas: string; unidades?: string; ativo: boolean; email?: string | null }
+        | {
+            login: string;
+            paginas: string;
+            unidades?: string;
+            ativo: boolean;
+            email?: string | null;
+          }
         | undefined;
       const mudouPermissao =
         row &&
@@ -125,15 +121,19 @@ export async function POST(req: Request) {
         if (mudouPermissao) await incrementarSessaoVer(id);
       }
 
-      if (emailRaw !== undefined) {
-        const anterior = normalizarEmail(row?.email);
-        if (!emailRaw) {
-          await limparEmailUsuario(id);
-        } else if (emailRaw !== anterior) {
-          const r = await dispararVerificacaoEmail({ userId: id, email: emailRaw, nome, login });
-          emailEnviado = r.enviado;
-          avisoEmail = r.aviso;
-        }
+      const loginReal = String(row?.login || login);
+      const anterior = normalizarEmail(row?.email);
+      if (!emailRaw) {
+        if (anterior) await limparEmailUsuario(id);
+      } else if (emailRaw !== anterior) {
+        const r = await dispararVerificacaoEmail({
+          userId: id,
+          email: emailRaw,
+          nome,
+          login: loginReal,
+        });
+        emailEnviado = r.enviado;
+        avisoEmail = r.aviso;
       }
 
       let message = mudouPermissao || senha
@@ -166,6 +166,8 @@ export async function POST(req: Request) {
       avisoEmail = r.aviso;
       if (emailEnviado) message += " E-mail de verificação enviado.";
       else if (avisoEmail) message += " " + avisoEmail;
+    } else if (String(body.login || "").includes("@")) {
+      message += " Login salvo como " + login + " e e-mail pessoal associado.";
     }
 
     return NextResponse.json({ ok: true, message, emailEnviado, avisoEmail });
