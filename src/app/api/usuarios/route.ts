@@ -8,6 +8,13 @@ import { mensagemErroApi } from "@/lib/api-error";
 import { validarSenhaSegura } from "@/lib/senha-politica";
 import { incrementarSessaoVer } from "@/lib/sessao-validar";
 import { parseUnidadesJson, serializarUnidades } from "@/services/vendedores";
+import {
+  dispararVerificacaoEmail,
+  limparEmailUsuario,
+  normalizarEmail,
+  statusEmailUsuario,
+  validarEmail,
+} from "@/lib/email-verificacao";
 
 function normalizarLogin(v: string) {
   return String(v || "")
@@ -26,22 +33,37 @@ function serializarPaginas(raw: unknown): string {
   return JSON.stringify([]);
 }
 
+async function idPorLogin(login: string): Promise<number | null> {
+  const rs = await getClient().execute({
+    sql: "SELECT id FROM usuarios WHERE login = ? LIMIT 1",
+    args: [login],
+  });
+  const id = Number(rs.rows?.[0]?.id);
+  return id || null;
+}
+
 export async function GET(req: Request) {
   await ensureUsuariosTable();
   const gate = await exigirSessao(req);
   if (isResp(gate)) return gate;
   const rs = await getClient().execute(
-    "SELECT id, login, nome, paginas, unidades, ativo FROM usuarios ORDER BY nome"
+    "SELECT id, login, nome, paginas, unidades, ativo, email, email_verificado_em FROM usuarios ORDER BY nome"
   );
   return NextResponse.json(
-    (rs.rows || []).map((u) => ({
-      id: u.id,
-      login: u.login,
-      nome: u.nome,
-      paginas: parsePaginas(u.paginas),
-      unidades: parseUnidadesJson(u.unidades),
-      ativo: Boolean(u.ativo),
-    }))
+    (rs.rows || []).map((u) => {
+      const st = statusEmailUsuario(u as { email?: string; email_verificado_em?: string });
+      return {
+        id: u.id,
+        login: u.login,
+        nome: u.nome,
+        paginas: parsePaginas(u.paginas),
+        unidades: parseUnidadesJson(u.unidades),
+        ativo: Boolean(u.ativo),
+        email: st.email,
+        emailVerificado: st.emailVerificado,
+        emailStatus: st.emailStatus,
+      };
+    })
   );
 }
 
@@ -57,22 +79,29 @@ export async function POST(req: Request) {
     const paginas = serializarPaginas(body.todas ? "*" : body.paginas);
     const unidades = serializarUnidades(body.unidades ?? []);
     const ativo = body.ativo !== false;
+    const emailRaw = body.email != null ? normalizarEmail(body.email) : undefined;
 
     if (!nome) throw new Error("Nome obrigatório.");
     if (!login) throw new Error("Usuário obrigatório (sem espaços).");
     if (!/^[a-z0-9._-]+$/.test(login)) {
       throw new Error("Usuário só pode ter letras, números, ponto, _ ou -.");
     }
+    if (emailRaw !== undefined && emailRaw && !validarEmail(emailRaw)) {
+      throw new Error("E-mail pessoal inválido.");
+    }
 
     const client = getClient();
+    let avisoEmail: string | undefined;
+    let emailEnviado = false;
+
     if (body.id) {
       const id = Number(body.id);
       const atual = await client.execute({
-        sql: "SELECT paginas, unidades, ativo FROM usuarios WHERE id = ? LIMIT 1",
+        sql: "SELECT paginas, unidades, ativo, email FROM usuarios WHERE id = ? LIMIT 1",
         args: [id],
       });
       const row = atual.rows[0] as
-        | { paginas: string; unidades?: string; ativo: boolean }
+        | { paginas: string; unidades?: string; ativo: boolean; email?: string | null }
         | undefined;
       const mudouPermissao =
         row &&
@@ -95,12 +124,25 @@ export async function POST(req: Request) {
         });
         if (mudouPermissao) await incrementarSessaoVer(id);
       }
-      return NextResponse.json({
-        ok: true,
-        message: mudouPermissao || senha
-          ? "Usuário atualizado. Ele precisará fazer login novamente."
-          : "Usuário atualizado.",
-      });
+
+      if (emailRaw !== undefined) {
+        const anterior = normalizarEmail(row?.email);
+        if (!emailRaw) {
+          await limparEmailUsuario(id);
+        } else if (emailRaw !== anterior) {
+          const r = await dispararVerificacaoEmail({ userId: id, email: emailRaw, nome, login });
+          emailEnviado = r.enviado;
+          avisoEmail = r.aviso;
+        }
+      }
+
+      let message = mudouPermissao || senha
+        ? "Usuário atualizado. Ele precisará fazer login novamente."
+        : "Usuário atualizado.";
+      if (emailEnviado) message += " E-mail de verificação enviado.";
+      else if (avisoEmail) message += " " + avisoEmail;
+
+      return NextResponse.json({ ok: true, message, emailEnviado, avisoEmail });
     }
 
     const erroSenha = validarSenhaSegura(senha);
@@ -109,12 +151,35 @@ export async function POST(req: Request) {
       sql: "INSERT INTO usuarios (login, nome, senha_hash, paginas, unidades, ativo) VALUES (?, ?, ?, ?, ?, TRUE)",
       args: [login, nome, hashSenha(senha), paginas, unidades],
     });
-    return NextResponse.json({ ok: true, message: "Usuário criado." });
+    const novoId = await idPorLogin(login);
+    if (!novoId) throw new Error("Usuário criado, mas não foi possível obter o ID.");
+
+    let message = "Usuário criado.";
+    if (emailRaw) {
+      const r = await dispararVerificacaoEmail({
+        userId: novoId,
+        email: emailRaw,
+        nome,
+        login,
+      });
+      emailEnviado = r.enviado;
+      avisoEmail = r.aviso;
+      if (emailEnviado) message += " E-mail de verificação enviado.";
+      else if (avisoEmail) message += " " + avisoEmail;
+    }
+
+    return NextResponse.json({ ok: true, message, emailEnviado, avisoEmail });
   } catch (e) {
     const msg = mensagemErroApi(e, "Falha ao salvar usuário.");
-    const jaExiste = /unique/i.test(e instanceof Error ? e.message : "");
+    const jaExiste = /unique|usuarios_email_unique/i.test(e instanceof Error ? e.message : "");
     return NextResponse.json(
-      { error: jaExiste ? "Esse usuário já existe." : msg },
+      {
+        error: jaExiste
+          ? /email/i.test(e instanceof Error ? e.message : "")
+            ? "Este e-mail pessoal já está em uso."
+            : "Esse usuário já existe."
+          : msg,
+      },
       { status: 400 }
     );
   }

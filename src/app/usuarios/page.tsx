@@ -13,12 +13,16 @@ type User = {
   paginas: string[] | "*";
   unidades: string[];
   ativo: boolean;
+  email?: string;
+  emailVerificado?: boolean;
+  emailStatus?: "—" | "Pendente" | "Verificado";
 };
 
 const VAZIO = {
   id: 0,
   login: "",
   nome: "",
+  email: "",
   senha: "",
   paginas: [] as string[],
   unidades: [] as string[],
@@ -111,6 +115,7 @@ export default function UsuariosPage() {
         id: form.id || undefined,
         login: form.login,
         nome: form.nome,
+        email: form.email,
         senha: form.senha,
         paginas: form.paginas,
         unidades: form.unidades,
@@ -145,6 +150,18 @@ export default function UsuariosPage() {
               placeholder="ex: joao"
               onChange={(e) => setForm({ ...form, login: e.target.value })}
             />
+          </div>
+          <div className="field">
+            <label>E-mail pessoal (opcional)</label>
+            <input
+              type="email"
+              value={form.email}
+              placeholder="ex: joao@gmail.com"
+              onChange={(e) => setForm({ ...form, email: e.target.value })}
+            />
+            <p className="muted" style={{ fontSize: "0.85rem", marginTop: 4 }}>
+              Se informado, enviamos um link para confirmar o e-mail (não bloqueia o login).
+            </p>
           </div>
           <div className="field">
             <label>Senha {form.id ? "(vazio = manter)" : ""}</label>
@@ -241,9 +258,11 @@ export default function UsuariosPage() {
               <tr>
                 <th>Nome</th>
                 <th>Usuário</th>
+                <th>E-mail</th>
                 <th>Unidades</th>
                 <th>Abas</th>
                 <th>Ativo</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
@@ -256,6 +275,7 @@ export default function UsuariosPage() {
                       id: u.id,
                       login: u.login,
                       nome: u.nome,
+                      email: u.email || "",
                       senha: "",
                       paginas: expandirPaginas(u.paginas),
                       unidades: u.unidades || [],
@@ -267,10 +287,57 @@ export default function UsuariosPage() {
                   <td>{u.nome}</td>
                   <td>{u.login}</td>
                   <td>
+                    {u.email ? (
+                      <>
+                        {u.email}
+                        <br />
+                        <span
+                          className="muted"
+                          style={{
+                            color:
+                              u.emailStatus === "Verificado"
+                                ? "#3fa34d"
+                                : u.emailStatus === "Pendente"
+                                  ? "#c9a227"
+                                  : undefined,
+                          }}
+                        >
+                          {u.emailStatus || "—"}
+                        </span>
+                      </>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                  <td>
                     {!u.unidades?.length ? "Todas" : u.unidades.join(", ")}
                   </td>
                   <td>{u.paginas === "*" ? "Todas" : expandirPaginas(u.paginas).length}</td>
                   <td>{u.ativo ? "Sim" : "Não"}</td>
+                  <td>
+                    {u.email && u.emailStatus === "Pendente" && (
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        style={{ fontSize: 12, padding: "4px 8px" }}
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          setMsg("");
+                          setErro("");
+                          const res = await fetch("/api/usuarios/reenviar-verificacao", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ id: u.id }),
+                          });
+                          const data = await res.json();
+                          if (!res.ok) setErro(data.error || "Falha ao reenviar");
+                          else setMsg(data.message);
+                        }}
+                      >
+                        Reenviar
+                      </button>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>

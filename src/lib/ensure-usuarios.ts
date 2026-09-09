@@ -35,6 +35,24 @@ export async function ensureUsuariosTable() {
       "ALTER TABLE usuarios ADD COLUMN unidades TEXT NOT NULL DEFAULT '[]'"
     );
   }
+  if (!colSet.has("email")) {
+    await client.execute("ALTER TABLE usuarios ADD COLUMN email TEXT");
+  }
+  if (!colSet.has("email_verificado_em")) {
+    await client.execute("ALTER TABLE usuarios ADD COLUMN email_verificado_em TIMESTAMPTZ");
+  }
+  if (!colSet.has("email_token_hash")) {
+    await client.execute("ALTER TABLE usuarios ADD COLUMN email_token_hash TEXT");
+  }
+  if (!colSet.has("email_token_expira")) {
+    await client.execute("ALTER TABLE usuarios ADD COLUMN email_token_expira TIMESTAMPTZ");
+  }
+  // UNIQUE parcial: vários NULL ok; e-mails preenchidos únicos
+  await client.execute(`
+    CREATE UNIQUE INDEX IF NOT EXISTS usuarios_email_unique
+    ON usuarios (LOWER(email))
+    WHERE email IS NOT NULL AND TRIM(email) <> ''
+  `);
 
   const count = await client.execute("SELECT COUNT(*) AS c FROM usuarios");
   const qtd = Number(count.rows?.[0]?.c ?? 0);

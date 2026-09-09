@@ -3,8 +3,8 @@ import type { NextRequest } from "next/server";
 import { lerTokenSessao, nomeCookieSessao } from "@/lib/session";
 import { podeAcessarApi, podeAcessarPagina, primeiraPagina } from "@/lib/roles";
 
-const PUBLIC_PAGES = ["/login"];
-const PUBLIC_APIS = ["/api/auth/login", "/api/health"];
+const PUBLIC_PAGES = ["/login", "/verificar-email"];
+const PUBLIC_APIS = ["/api/auth/login", "/api/auth/verificar-email", "/api/health"];
 
 function withSecurityHeaders(res: NextResponse): NextResponse {
   res.headers.set("X-Frame-Options", "DENY");

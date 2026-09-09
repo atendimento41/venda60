@@ -15,8 +15,10 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@types/nodemailer": "^8.0.1",
     "drizzle-orm": "^0.38.3",
     "next": "^15.1.0",
+    "nodemailer": "^10.0.1",
     "pg": "^8.23.0",
     "pg-copy-streams": "^7.0.0",
     "react": "^19.0.0",

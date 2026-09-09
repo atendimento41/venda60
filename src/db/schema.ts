@@ -17,6 +17,11 @@ export const usuarios = pgTable("usuarios", {
   unidades: text("unidades").notNull().default("[]"),
   ativo: boolean("ativo").notNull().default(true),
   sessaoVer: integer("sessao_ver").notNull().default(1),
+  /** E-mail pessoal opcional (verificação SMTP). */
+  email: text("email"),
+  emailVerificadoEm: text("email_verificado_em"),
+  emailTokenHash: text("email_token_hash"),
+  emailTokenExpira: text("email_token_expira"),
 });
 
 export const vendedores = pgTable("vendedores", {
