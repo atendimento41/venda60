@@ -8,10 +8,11 @@ function LoginForm() {
   const params = useSearchParams();
   const [login, setLogin] = useState("");
   const [senha, setSenha] = useState("");
-  const [erro, setErro] = useState("");
+  const [erro, setErro] = useState(params.get("erro") || "");
   const [loading, setLoading] = useState(false);
 
   const motivo = params.get("motivo");
+  const next = params.get("next") || "";
 
   async function entrar(e: React.FormEvent) {
     e.preventDefault();
@@ -28,9 +29,12 @@ function LoginForm() {
       setErro(data.error || "Falha no login");
       return;
     }
-    router.push(params.get("next") || data.next || "/");
+    router.push(next || data.next || "/");
     router.refresh();
   }
+
+  const googleHref =
+    "/api/auth/google" + (next ? `?next=${encodeURIComponent(next)}` : "");
 
   return (
     <div className="page-wrap">
@@ -45,8 +49,28 @@ function LoginForm() {
         <h1>Entrar</h1>
         <p className="muted">Controle operacional de vendas das unidades.</p>
         {motivo === "sessao" && (
-          <p className="msg-erro">Sessão encerrada. Faça login novamente (permissões ou senha foram alteradas).</p>
+          <p className="msg-erro">
+            Sessão encerrada. Faça login novamente (permissões ou senha foram alteradas).
+          </p>
         )}
+        <a
+          className="btn btn-block"
+          href={googleHref}
+          style={{
+            display: "block",
+            textAlign: "center",
+            textDecoration: "none",
+            background: "#fff",
+            color: "#222",
+            border: "1px solid #ccc",
+            marginBottom: 16,
+          }}
+        >
+          Entrar com Google
+        </a>
+        <p className="muted" style={{ textAlign: "center", marginTop: -8, marginBottom: 16 }}>
+          ou com usuário e senha
+        </p>
         <form onSubmit={entrar}>
           <div className="field">
             <label>Usuário</label>
@@ -71,6 +95,9 @@ function LoginForm() {
           </button>
           {erro && <p className="msg-erro">{erro}</p>}
         </form>
+        <p className="muted" style={{ fontSize: 12, marginTop: 16 }}>
+          Google só funciona se o admin cadastrou seu e-mail pessoal neste sistema.
+        </p>
       </div>
     </div>
   );

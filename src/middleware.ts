@@ -4,7 +4,12 @@ import { lerTokenSessao, nomeCookieSessao } from "@/lib/session";
 import { podeAcessarApi, podeAcessarPagina, primeiraPagina } from "@/lib/roles";
 
 const PUBLIC_PAGES = ["/login", "/verificar-email"];
-const PUBLIC_APIS = ["/api/auth/login", "/api/auth/verificar-email", "/api/health"];
+const PUBLIC_APIS = [
+  "/api/auth/login",
+  "/api/auth/verificar-email",
+  "/api/auth/google",
+  "/api/health",
+];
 
 function withSecurityHeaders(res: NextResponse): NextResponse {
   res.headers.set("X-Frame-Options", "DENY");
@@ -30,7 +35,7 @@ export async function middleware(req: NextRequest) {
   const token = req.cookies.get(nomeCookieSessao())?.value;
   const sessao = await lerTokenSessao(token);
 
-  if (PUBLIC_PAGES.includes(pathname) || PUBLIC_APIS.includes(pathname)) {
+  if (PUBLIC_PAGES.includes(pathname) || PUBLIC_APIS.includes(pathname) || pathname.startsWith("/api/auth/google")) {
     if (pathname === "/login" && sessao) {
       return withSecurityHeaders(
         NextResponse.redirect(new URL(primeiraPagina(sessao.paginas), req.url))
