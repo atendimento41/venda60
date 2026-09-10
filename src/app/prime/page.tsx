@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import AppShell from "@/components/AppShell";
 import { asArray, type VendedorClient, intersecaoUnidades } from "@/lib/client";
+import { useSubmitLock } from "@/lib/use-submit-lock";
 
 export default function PrimePage() {
   const [vendedores, setVendedores] = useState<VendedorClient[]>([]);
@@ -15,17 +16,25 @@ export default function PrimePage() {
   const [itensPrime, setItensPrime] = useState<{ nome: string; preco: number }[]>([]);
   const [msg, setMsg] = useState("");
   const [erro, setErro] = useState("");
+  const { busy, run } = useSubmitLock();
 
   useEffect(() => {
-    fetch("/api/vendedores")
-      .then((r) => r.json())
-      .then((d) => setVendedores(asArray(d)));
-    fetch("/api/prime?itens=1")
-      .then((r) => r.json())
-      .then((d) => setItensPrime(asArray(d)));
-    fetch("/api/auth/me")
-      .then((r) => r.json())
-      .then((d) => setUnidadesUsuario(asArray(d?.usuario?.unidades)));
+    void (async () => {
+      const [vRes, meRes, primeRes] = await Promise.all([
+        fetch("/api/vendedores").then((r) => r.json()),
+        fetch("/api/auth/me").then((r) => r.json()),
+        fetch("/api/prime?itens=1").then((r) => r.json()),
+      ]);
+      const uu = asArray(meRes?.usuario?.unidades);
+      const lista = asArray(vRes) as VendedorClient[];
+      setUnidadesUsuario(uu);
+      setItensPrime(asArray(primeRes));
+      setVendedores(
+        uu.length === 0
+          ? lista
+          : lista.filter((vend) => intersecaoUnidades(vend.unidades, uu).length > 0)
+      );
+    })();
   }, []);
 
   function onVendedorChange(id: string) {
@@ -38,34 +47,36 @@ export default function PrimePage() {
   }
 
   async function registrar() {
-    setMsg("");
-    setErro("");
-    const v = vendedores.find((x) => x.id === vendedorId);
-    if (!v) {
-      setErro("Selecione o vendedor.");
-      return;
-    }
-    if (unidadesDisp.length === 0) {
-      setErro("Sem unidade disponível para este usuário/vendedor.");
-      return;
-    }
-    const res = await fetch("/api/prime", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        vendedor: v.nome,
-        id_vendedor: v.id,
-        unidade,
-        item,
-        quantidade: Number(qtd) || 1,
-      }),
+    await run(async () => {
+      setMsg("");
+      setErro("");
+      const v = vendedores.find((x) => x.id === vendedorId);
+      if (!v) {
+        setErro("Selecione o vendedor.");
+        return;
+      }
+      if (unidadesDisp.length === 0) {
+        setErro("Sem unidade disponível para este usuário/vendedor.");
+        return;
+      }
+      const res = await fetch("/api/prime", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          vendedor: v.nome,
+          id_vendedor: v.id,
+          unidade,
+          item,
+          quantidade: Number(qtd) || 1,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setErro(data.error);
+        return;
+      }
+      setMsg(data.message);
     });
-    const data = await res.json();
-    if (!res.ok) {
-      setErro(data.error);
-      return;
-    }
-    setMsg(data.message);
   }
 
   const semUnidade = Boolean(vendedorId && unidadesDisp.length === 0);
@@ -123,8 +134,12 @@ export default function PrimePage() {
         <label>Quantidade</label>
         <input value={qtd} onChange={(e) => setQtd(e.target.value)} inputMode="numeric" />
       </div>
-      <button className="btn" onClick={registrar} disabled={semUnidade || !unidade || !item}>
-        Registrar PRIME
+      <button
+        className="btn"
+        onClick={registrar}
+        disabled={busy || semUnidade || !unidade || !item}
+      >
+        {busy ? "Registrando…" : "Registrar PRIME"}
       </button>
       {msg && <p className="msg-ok">{msg}</p>}
       {erro && <p className="msg-erro">{erro}</p>}

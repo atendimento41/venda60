@@ -10,6 +10,7 @@ import {
   type VendedorClient,
   intersecaoUnidades,
 } from "@/lib/client";
+import { useSubmitLock } from "@/lib/use-submit-lock";
 
 type ItemUnidade = {
   sku: string;
@@ -71,6 +72,7 @@ export default function HomePage() {
   const [erro, setErro] = useState("");
   const [build, setBuild] = useState("");
   const [unidadesUsuario, setUnidadesUsuario] = useState<string[]>([]);
+  const { busy, run } = useSubmitLock();
 
   const categorias = useMemo(() => {
     const map = new Map<string, string>();
@@ -125,9 +127,16 @@ export default function HomePage() {
       apiGet<{ usuario?: { unidades?: string[] } }>("/api/auth/me"),
     ]);
     if (v.error) setErro(v.error);
-    setVendedores(asArray(v.data));
+    const uu = asArray(me.data?.usuario?.unidades);
+    const lista = asArray(v.data);
+    setUnidadesUsuario(uu);
     setBuild(b.data?.build || "");
-    setUnidadesUsuario(asArray(me.data?.usuario?.unidades));
+    // Usuário com unidade vinculada (ex.: tgs_venda → TGS) só vê vendedores dessa loja.
+    setVendedores(
+      uu.length === 0
+        ? lista
+        : lista.filter((vend) => intersecaoUnidades(vend.unidades, uu).length > 0)
+    );
   }
 
   useEffect(() => {
@@ -192,47 +201,49 @@ export default function HomePage() {
   }
 
   async function registrar() {
-    setErro("");
-    setMsg("");
-    if (!vendedorId) {
-      setErro("Selecione o vendedor.");
-      return;
-    }
-    if (unidadesDisp.length === 0) {
-      setErro("Sem unidade disponível para este usuário/vendedor.");
-      return;
-    }
-    if (!unidade) {
-      setErro("Selecione a unidade.");
-      return;
-    }
-    const item = itens.find((i) => i.sku === sku);
-    if (!item) {
-      setErro("Selecione um item.");
-      return;
-    }
-    const res = await apiPost<{ message: string }>("/api/vendas", {
-      vendedor: vendedorNome,
-      id_vendedor: vendedorId,
-      unidade,
-      desconto: Number(String(desconto).replace(",", ".")) || 0,
-      itens: [
-        {
-          sku: item.sku,
-          descricao: item.descricao,
-          categoria: item.categoria,
-          subcategoria: item.subcategoria,
-          preco: item.preco,
-          quantidade: Number(quantidade) || 1,
-        },
-      ],
+    await run(async () => {
+      setErro("");
+      setMsg("");
+      if (!vendedorId) {
+        setErro("Selecione o vendedor.");
+        return;
+      }
+      if (unidadesDisp.length === 0) {
+        setErro("Sem unidade disponível para este usuário/vendedor.");
+        return;
+      }
+      if (!unidade) {
+        setErro("Selecione a unidade.");
+        return;
+      }
+      const item = itens.find((i) => i.sku === sku);
+      if (!item) {
+        setErro("Selecione um item.");
+        return;
+      }
+      const res = await apiPost<{ message: string }>("/api/vendas", {
+        vendedor: vendedorNome,
+        id_vendedor: vendedorId,
+        unidade,
+        desconto: Number(String(desconto).replace(",", ".")) || 0,
+        itens: [
+          {
+            sku: item.sku,
+            descricao: item.descricao,
+            categoria: item.categoria,
+            subcategoria: item.subcategoria,
+            preco: item.preco,
+            quantidade: Number(quantidade) || 1,
+          },
+        ],
+      });
+      if (res.error || !res.data) {
+        setErro(res.error || "Erro ao registrar");
+        return;
+      }
+      setMsg(res.data.message);
+      carregarItens(unidade);
     });
-    if (res.error || !res.data) {
-      setErro(res.error || "Erro ao registrar");
-      return;
-    }
-    setMsg(res.data.message);
-    carregarItens(unidade);
   }
 
   const semUnidade = Boolean(vendedorId && unidadesDisp.length === 0);
@@ -347,8 +358,8 @@ export default function HomePage() {
           <label>Desconto total (R$)</label>
           <input value={desconto} onChange={(e) => setDesconto(e.target.value)} />
         </div>
-        <button className="btn btn-block" onClick={registrar}>
-          Registrar venda
+        <button className="btn btn-block" onClick={registrar} disabled={busy}>
+          {busy ? "Registrando…" : "Registrar venda"}
         </button>
         {msg && <p className="msg-ok">{msg}</p>}
         {erro && <p className="msg-erro">{erro}</p>}

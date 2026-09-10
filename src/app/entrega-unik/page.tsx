@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import AppShell from "@/components/AppShell";
 import { formatMoeda, hojeISO, UNIDADES, asArray, comprimirFoto } from "@/lib/client";
+import { useSubmitLock } from "@/lib/use-submit-lock";
 
 type Mov = {
   id: number;
@@ -34,6 +35,7 @@ export default function EntregaUnikPage() {
   const [erro, setErro] = useState("");
   const [ultimaDataFmt, setUltimaDataFmt] = useState("");
   const [lancamentos, setLancamentos] = useState<Mov[]>([]);
+  const { busy, run } = useSubmitLock();
 
   async function carregarLancamentos() {
     const d = await fetch("/api/unik?tipo=lancamentos").then((r) => r.json());
@@ -67,38 +69,40 @@ export default function EntregaUnikPage() {
   }
 
   async function lancar() {
-    setErro("");
-    setMsg("");
-    if (!nome.trim()) {
-      setErro("Informe o nome como veio da UNIK.");
-      return;
-    }
-    const res = await fetch("/api/unik", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        nome: nome.trim(),
-        unidade,
-        quantidade: Number(String(quantidade).replace(",", ".")),
-        status,
-        data,
-        fotoUrl,
-        custo,
-        sugestaoVenda,
-        recebidoPor,
-      }),
+    await run(async () => {
+      setErro("");
+      setMsg("");
+      if (!nome.trim()) {
+        setErro("Informe o nome como veio da UNIK.");
+        return;
+      }
+      const res = await fetch("/api/unik", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nome: nome.trim(),
+          unidade,
+          quantidade: Number(String(quantidade).replace(",", ".")),
+          status,
+          data,
+          fotoUrl,
+          custo,
+          sugestaoVenda,
+          recebidoPor,
+        }),
+      });
+      const dataRes = await res.json();
+      if (!res.ok) {
+        setErro(dataRes.error || "Falha ao lançar");
+        return;
+      }
+      setMsg(dataRes.message);
+      setQuantidade("1");
+      setFotoUrl("");
+      setCusto("");
+      setSugestaoVenda("");
+      carregarLancamentos();
     });
-    const dataRes = await res.json();
-    if (!res.ok) {
-      setErro(dataRes.error || "Falha ao lançar");
-      return;
-    }
-    setMsg(dataRes.message);
-    setQuantidade("1");
-    setFotoUrl("");
-    setCusto("");
-    setSugestaoVenda("");
-    carregarLancamentos();
   }
 
   return (
@@ -195,8 +199,8 @@ export default function EntregaUnikPage() {
             )}
           </div>
         </div>
-        <button className="btn" onClick={lancar}>
-          Registrar
+        <button className="btn" onClick={lancar} disabled={busy}>
+          {busy ? "Registrando…" : "Registrar"}
         </button>
         {msg && <p className="msg-ok">{msg}</p>}
         {erro && <p className="msg-erro">{erro}</p>}
