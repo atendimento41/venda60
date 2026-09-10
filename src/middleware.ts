@@ -9,6 +9,7 @@ const PUBLIC_APIS = [
   "/api/auth/verificar-email",
   "/api/auth/google",
   "/api/health",
+  "/api/sso/consume",
 ];
 
 function withSecurityHeaders(res: NextResponse): NextResponse {
