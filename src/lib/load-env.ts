@@ -1,9 +1,8 @@
 import fs from "fs";
 import path from "path";
 
-/** Carrega .env.local para scripts db:migrate / db:import (tsx não carrega sozinho). */
-export function loadEnvLocal() {
-  const envPath = path.join(process.cwd(), ".env.local");
+function carregarArquivoEnv(fileName: string) {
+  const envPath = path.join(process.cwd(), fileName);
   if (!fs.existsSync(envPath)) return;
   const text = fs.readFileSync(envPath, "utf8");
   for (const line of text.split("\n")) {
@@ -15,4 +14,10 @@ export function loadEnvLocal() {
     const val = trimmed.slice(eq + 1).trim();
     if (key && process.env[key] == null) process.env[key] = val;
   }
+}
+
+/** Carrega .env.local e .env para scripts (tsx não carrega sozinho). */
+export function loadEnvLocal() {
+  carregarArquivoEnv(".env.local");
+  carregarArquivoEnv(".env");
 }

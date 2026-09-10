@@ -117,6 +117,13 @@ export async function ensureItensSchema() {
   if (!cols.has("unidades")) {
     await client.execute("ALTER TABLE itens ADD COLUMN unidades TEXT NOT NULL DEFAULT '[]'");
   }
+  // Default legado: vazio = todas as unidades (ajuste gradual no cadastro).
+  await client.execute(
+    `UPDATE itens SET unidades = '[]'
+     WHERE unidades IS NULL
+        OR trim(unidades) = ''
+        OR lower(trim(unidades)) = 'null'`
+  );
   itensOk = true;
 }
 

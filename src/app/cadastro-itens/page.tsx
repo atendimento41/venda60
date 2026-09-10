@@ -236,6 +236,49 @@ export default function CadastroItensPage() {
     carregar();
   }
 
+  async function desativar(sku: string) {
+    setErro("");
+    setMsg("");
+    const res = await fetch("/api/itens", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sku, desativar: true }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      setErro(data.error || "Falha ao desativar");
+      return;
+    }
+    setMsg(data.message || "Item desativado.");
+    if (form.sku === sku) setForm(VAZIO);
+    carregar();
+  }
+
+  async function excluir(sku: string) {
+    if (
+      !confirm(
+        "Excluir este item definitivamente?\n\nSó funciona se não houver venda com esse SKU. Caso contrário, use Desativar."
+      )
+    ) {
+      return;
+    }
+    setErro("");
+    setMsg("");
+    const res = await fetch("/api/itens", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sku, excluir: true }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      setErro(data.error || "Falha ao excluir");
+      return;
+    }
+    setMsg(data.message || "Item excluído.");
+    if (form.sku === sku) setForm(VAZIO);
+    carregar();
+  }
+
   async function onFoto(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = "";
@@ -372,10 +415,22 @@ export default function CadastroItensPage() {
             {photoIlimitado ? " · PHOTO" : ""}
           </label>
 
+          {editando && (
+            <label className="check-inline" style={{ marginTop: 12 }}>
+              <input
+                type="checkbox"
+                checked={form.ativo}
+                onChange={(e) => setForm({ ...form, ativo: e.target.checked })}
+              />
+              Ativo (desmarque ou use Desativar para tirar da venda)
+            </label>
+          )}
+
           <p style={{ fontWeight: "bold", margin: "12px 0 8px" }}>Unidades do item</p>
           <p className="muted">
-            Nenhuma marcada: disponível em todas. Com unidade marcada, só aparece/vende nessas lojas
-            (além do estoque).
+            Padrão: nenhuma marcada = disponível em todas as lojas. Marque só se quiser restringir
+            (ex.: só TGS). Na venda, o item só aparece na unidade escolhida e se houver estoque (ou
+            for ilimitado).
           </p>
           {UNIDADES.map((u) => (
             <label className="check-inline" key={u}>
@@ -409,9 +464,30 @@ export default function CadastroItensPage() {
             {editando ? "Salvar alterações" : "Salvar item"}
           </button>
           {editando && (
-            <button className="btn btn-secondary btn-block" type="button" onClick={() => setForm(VAZIO)}>
-              Novo item
-            </button>
+            <>
+              <div className="btn-row" style={{ marginTop: 10 }}>
+                {form.ativo ? (
+                  <button
+                    className="btn btn-secondary"
+                    type="button"
+                    onClick={() => desativar(form.sku)}
+                  >
+                    Desativar
+                  </button>
+                ) : null}
+                <button
+                  className="btn btn-secondary"
+                  type="button"
+                  style={{ borderColor: "#c45c5c", color: "#f0b4b4" }}
+                  onClick={() => excluir(form.sku)}
+                >
+                  Excluir
+                </button>
+              </div>
+              <button className="btn btn-secondary btn-block" type="button" onClick={() => setForm(VAZIO)}>
+                Novo item
+              </button>
+            </>
           )}
           {msg && <p className="msg-ok">{msg}</p>}
           {erro && <p className="msg-erro">{erro}</p>}
@@ -499,6 +575,7 @@ export default function CadastroItensPage() {
                 <tr>
                   <th></th>
                   <th>Descrição</th>
+                  <th>Ativo</th>
                   <th>Unidades</th>
                   <th>UNIK</th>
                   <th>Categoria</th>
@@ -506,18 +583,26 @@ export default function CadastroItensPage() {
                   <th className="num">Preço</th>
                   <th className="num">Sugestão</th>
                   <th className="num">Custo</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
                 {listaTabela.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="muted">
+                    <td colSpan={11} className="muted">
                       Nenhum item com esses filtros.
                     </td>
                   </tr>
                 ) : (
                   listaTabela.map((i) => (
-                    <tr key={i.sku} style={{ cursor: "pointer" }} onClick={() => abrirItem(i)}>
+                    <tr
+                      key={i.sku}
+                      style={{
+                        cursor: "pointer",
+                        opacity: i.ativo === false ? 0.55 : 1,
+                      }}
+                      onClick={() => abrirItem(i)}
+                    >
                       <td>
                         {i.fotoUrl ? (
                           <img className="foto-thumb" src={i.fotoUrl} alt="" />
@@ -529,6 +614,7 @@ export default function CadastroItensPage() {
                         {i.descricao}
                         {i.ilimitado ? <span className="muted"> · ilimitado</span> : ""}
                       </td>
+                      <td>{i.ativo === false ? "Não" : "Sim"}</td>
                       <td>
                         {!i.unidades?.length ? (
                           <span className="muted">Todas</span>
@@ -542,6 +628,33 @@ export default function CadastroItensPage() {
                       <td className="num">R$ {formatMoeda(i.preco)}</td>
                       <td className="num">R$ {formatMoeda(i.sugestaoVenda || 0)}</td>
                       <td className="num">R$ {formatMoeda(i.custo || 0)}</td>
+                      <td>
+                        <div className="btn-row" style={{ marginTop: 0, gap: 6 }}>
+                          {i.ativo !== false ? (
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                desativar(i.sku);
+                              }}
+                            >
+                              Desativar
+                            </button>
+                          ) : null}
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            style={{ borderColor: "#c45c5c", color: "#f0b4b4" }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              excluir(i.sku);
+                            }}
+                          >
+                            Excluir
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   ))
                 )}
