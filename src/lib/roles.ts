@@ -7,7 +7,7 @@ export const NAV_LINKS: { href: string; label: string }[] = [
   { href: "/estoque-admin", label: "Alocação de item" },
   { href: "/cadastro-itens", label: "Cadastro de itens" },
   { href: "/cancelamento-vendas", label: "Cancelar venda / PRIME" },
-  { href: "/editar-data-venda", label: "Editar data da venda" },
+  { href: "/editar-venda", label: "Editar venda" },
   { href: "/ultimos-lancamentos", label: "Últimos lançamentos" },
   { href: "/estoque", label: "Estoque" },
   { href: "/relatorio-detalhado", label: "Relatório detalhado" },
@@ -55,7 +55,7 @@ export const GRUPOS_NAV: { id: string; label: string; hrefs: string[] }[] = [
       "/estoque-admin",
       "/cadastro-itens",
       "/cancelamento-vendas",
-      "/editar-data-venda",
+      "/editar-venda",
       "/ultimos-lancamentos",
       "/estoque",
     ],
@@ -140,6 +140,9 @@ export function temPagina(paginas: PaginasPerm, path: string): boolean {
   if (paginas === "*") return true;
   const clean = (path.split("?")[0] || "/") as string;
   if (paginas.includes(clean)) return true;
+  // alias: permissão antiga da aba "Editar data da venda"
+  if (clean === "/editar-venda" && paginas.includes("/editar-data-venda")) return true;
+  if (clean === "/editar-data-venda" && paginas.includes("/editar-venda")) return true;
   if (ehHrefUnik(clean) && temUnikCompleto(paginas)) return true;
   return false;
 }
@@ -176,6 +179,7 @@ export function podeAcessarApi(paginas: PaginasPerm, method: string, pathname: s
         "/resumo-diario",
         "/comissao",
         "/ultimos-lancamentos",
+        "/editar-venda",
         "/editar-data-venda",
         "/venda-maluca",
         "/vendedores"
@@ -184,12 +188,12 @@ export function podeAcessarApi(paginas: PaginasPerm, method: string, pathname: s
     return tem("/vendedores");
   }
 
-  if (pathname.startsWith("/api/vendas/data")) {
-    return tem("/editar-data-venda");
+  if (pathname.startsWith("/api/vendas/editar") || pathname.startsWith("/api/vendas/data")) {
+    return alguma("/editar-venda", "/editar-data-venda");
   }
 
   if (pathname.startsWith("/api/vendas")) {
-    if (m === "GET") return alguma("/", "/ultimos-lancamentos", "/editar-data-venda");
+    if (m === "GET") return alguma("/", "/ultimos-lancamentos", "/editar-venda", "/editar-data-venda");
     return tem("/");
   }
 

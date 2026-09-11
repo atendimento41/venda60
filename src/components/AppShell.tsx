@@ -32,7 +32,8 @@ function iconFor(href: string) {
   if (href === "/cadastro-itens") return "M12 5v14M5 12h14";
   if (href === "/estoque-admin") return "M12 15a3 3 0 100-6 3 3 0 000 6zM4 12h2m12 0h2M6.5 6.5l1.5 1.5m8 8l1.5 1.5m0-11L16 8M8 16l-1.5 1.5";
   if (href === "/cancelamento-vendas") return "M6 6l12 12M18 6L6 18";
-  if (href === "/editar-data-venda") return "M12 20h9M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4 12.5-12.5z";
+  if (href === "/editar-venda" || href === "/editar-data-venda")
+    return "M12 20h9M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4 12.5-12.5z";
   if (href === "/entrega-unik") return "M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z";
   if (href === "/unik-editar-lancamento") return "M12 20h9M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4 12.5-12.5z";
   if (href === "/unik-vincular") return "M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71";

@@ -466,7 +466,20 @@ export async function listarVendasParaCancelamento(filtros: {
     }));
 }
 
-export async function listarVendasParaEditarData(filtros: {
+export async function obterUltimoDiaVenda(): Promise<string> {
+  const client = getClient();
+  const rs = await client.execute({
+    sql: `SELECT MAX(SUBSTRING(data FROM 1 FOR 10)) AS d
+          FROM vendas
+          WHERE COALESCE(UPPER(status), '') != 'CANCELADO'
+            AND data ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'`,
+    args: [],
+  });
+  const d = String(rs.rows[0]?.d || "").trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : hojeISO();
+}
+
+export async function listarVendasParaEditar(filtros: {
   nome?: string;
   unidade?: string;
   vendedor?: string;
@@ -474,80 +487,202 @@ export async function listarVendasParaEditarData(filtros: {
   dataFim?: string;
   categoria?: string;
   subcategoria?: string;
+  /** Se true e sem data, usa o último dia com lançamento. */
+  usarUltimoDia?: boolean;
 }) {
-  const rows = await db.select().from(vendas).orderBy(desc(vendas.id)).limit(3000);
+  let dataInicio = normalizeText(filtros.dataInicio);
+  let dataFim = normalizeText(filtros.dataFim);
+  const ultimoDia = await obterUltimoDiaVenda();
 
-  return rows
-    .filter((row) => {
-      if (isVendaCancelada(row.status)) return false;
-      if (filtros.unidade && normalizeUpper(row.unidade) !== normalizeUpper(filtros.unidade))
-        return false;
-      if (filtros.vendedor && normalizeText(row.vendedor) !== normalizeText(filtros.vendedor))
-        return false;
-      const ymd = dataYmd(row.data);
-      if (filtros.dataInicio && ymd < filtros.dataInicio) return false;
-      if (filtros.dataFim && ymd > filtros.dataFim) return false;
-      if (filtros.categoria && normalizeUpper(row.categoria) !== normalizeUpper(filtros.categoria))
-        return false;
-      if (
-        filtros.subcategoria &&
-        normalizeUpper(row.subcategoria) !== normalizeUpper(filtros.subcategoria)
-      )
-        return false;
-      if (filtros.nome) {
-        const n = normalizeUpper(filtros.nome);
-        const item = normalizeUpper(row.descricao || row.sku);
-        if (!item.includes(n) && !normalizeUpper(row.sku).includes(n)) return false;
-      }
-      return true;
-    })
-    .slice(0, 400)
-    .map((row) => {
-      const raw = String(row.data || "").trim();
-      const m = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})/.exec(raw);
-      return {
-        id: row.id,
-        dataHora: formatDataHoraBR(row.data),
-        dataLocal: m ? m[1] : raw.slice(0, 16),
-        vendedor: row.vendedor || "—",
-        unidade: row.unidade,
-        sku: row.sku,
-        item: row.descricao || row.sku,
-        categoria: row.categoria || "",
-        subcategoria: row.subcategoria || "",
-        quantidade: row.quantidade,
-        valorRecebido: row.valorRecebido,
-      };
-    });
+  if (!dataInicio && !dataFim && filtros.usarUltimoDia !== false) {
+    dataInicio = ultimoDia;
+    dataFim = ultimoDia;
+  }
+
+  const client = getClient();
+  const where: string[] = ["COALESCE(UPPER(status), '') != 'CANCELADO'"];
+  const args: (string | number)[] = [];
+
+  if (dataInicio) {
+    where.push("SUBSTRING(data FROM 1 FOR 10) >= ?");
+    args.push(dataInicio);
+  }
+  if (dataFim) {
+    where.push("SUBSTRING(data FROM 1 FOR 10) <= ?");
+    args.push(dataFim);
+  }
+  if (filtros.unidade) {
+    where.push("UPPER(TRIM(unidade)) = UPPER(TRIM(?))");
+    args.push(filtros.unidade);
+  }
+  if (filtros.vendedor) {
+    where.push("TRIM(vendedor) = TRIM(?)");
+    args.push(filtros.vendedor);
+  }
+  if (filtros.categoria) {
+    where.push("UPPER(TRIM(COALESCE(categoria, ''))) = UPPER(TRIM(?))");
+    args.push(filtros.categoria);
+  }
+  if (filtros.subcategoria) {
+    where.push("UPPER(TRIM(COALESCE(subcategoria, ''))) = UPPER(TRIM(?))");
+    args.push(filtros.subcategoria);
+  }
+  if (filtros.nome) {
+    where.push("(UPPER(COALESCE(descricao, '')) LIKE ? OR UPPER(COALESCE(sku, '')) LIKE ?)");
+    const like = `%${normalizeUpper(filtros.nome)}%`;
+    args.push(like, like);
+  }
+
+  const rs = await client.execute({
+    sql: `SELECT id, data, id_vendedor, vendedor, unidade, categoria, subcategoria,
+                 sku, descricao, quantidade, preco_unitario, subtotal_bruto, desconto, valor_recebido
+          FROM vendas
+          WHERE ${where.join(" AND ")}
+          ORDER BY id DESC
+          LIMIT 500`,
+    args,
+  });
+
+  const linhas = (rs.rows || []).map((row) => {
+    const raw = String(row.data || "").trim();
+    const m = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})/.exec(raw);
+    return {
+      id: Number(row.id),
+      dataHora: formatDataHoraBR(row.data),
+      dataLocal: m ? m[1] : raw.slice(0, 16),
+      idVendedor: String(row.id_vendedor || ""),
+      vendedor: String(row.vendedor || "—"),
+      unidade: String(row.unidade || ""),
+      sku: String(row.sku || ""),
+      item: String(row.descricao || row.sku || ""),
+      categoria: String(row.categoria || ""),
+      subcategoria: String(row.subcategoria || ""),
+      quantidade: Number(row.quantidade) || 0,
+      precoUnitario: Number(row.preco_unitario) || 0,
+      desconto: Number(row.desconto) || 0,
+      valorRecebido: Number(row.valor_recebido) || 0,
+    };
+  });
+
+  return {
+    linhas,
+    dataPadrao: dataInicio || dataFim || ultimoDia,
+    ultimoDia,
+    total: linhas.length,
+  };
 }
 
-export async function atualizarDataVenda(id: number, dataNova: string, operador?: string) {
-  const sid = Number(id);
+/** @deprecated use listarVendasParaEditar */
+export async function listarVendasParaEditarData(
+  filtros: Parameters<typeof listarVendasParaEditar>[0]
+) {
+  const res = await listarVendasParaEditar(filtros);
+  return res.linhas;
+}
+
+export async function atualizarVenda(
+  input: {
+    id: number;
+    data?: string;
+    idVendedor?: string;
+    vendedor?: string;
+    valorRecebido?: number | string;
+  },
+  operador?: string
+) {
+  const sid = Number(input.id);
   if (!Number.isFinite(sid) || sid <= 0) throw new Error("Venda inválida.");
-  const data = normalizarDataVendaISO(dataNova);
-  if (!data) throw new Error("Data/hora inválida.");
 
   const [row] = await db.select().from(vendas).where(eq(vendas.id, sid));
   if (!row) throw new Error("Venda não encontrada.");
-  if (isVendaCancelada(row.status)) throw new Error("Venda cancelada não pode ter data alterada.");
+  if (isVendaCancelada(row.status)) throw new Error("Venda cancelada não pode ser editada.");
 
-  const anterior = String(row.data || "");
-  await db.update(vendas).set({ data }).where(eq(vendas.id, sid));
+  const patch: Partial<{
+    data: string;
+    idVendedor: string;
+    vendedor: string;
+    valorRecebido: number;
+    desconto: number;
+  }> = {};
+  const mudancas: Array<{ campo: string; de: string; para: string }> = [];
+
+  if (input.data != null && String(input.data).trim()) {
+    const dataNova = normalizarDataVendaISO(input.data);
+    const de = String(row.data || "");
+    if (dataNova !== de) {
+      patch.data = dataNova;
+      mudancas.push({
+        campo: "data",
+        de: formatDataHoraBR(de),
+        para: formatDataHoraBR(dataNova),
+      });
+    }
+  }
+
+  const querVendedor =
+    (input.idVendedor != null && String(input.idVendedor).trim()) ||
+    (input.vendedor != null && String(input.vendedor).trim());
+  if (querVendedor) {
+    const vend = await obterVendedorPorIdOuNome(input.idVendedor, input.vendedor);
+    if (!vend) throw new Error("Vendedor não encontrado.");
+    if (!vend.ativo) throw new Error("Vendedor inativo.");
+    assertUnidadeDoVendedor(vend, row.unidade);
+    const idAnt = String(row.idVendedor || "");
+    const nomeAnt = String(row.vendedor || "");
+    if (vend.id !== idAnt || normalizeText(vend.nome) !== normalizeText(nomeAnt)) {
+      patch.idVendedor = vend.id;
+      patch.vendedor = vend.nome;
+      mudancas.push({
+        campo: "vendedor",
+        de: nomeAnt || "—",
+        para: vend.nome,
+      });
+    }
+  }
+
+  if (input.valorRecebido != null && String(input.valorRecebido).trim() !== "") {
+    const valorNovo = Number(String(input.valorRecebido).replace(",", "."));
+    if (!Number.isFinite(valorNovo) || valorNovo < 0) throw new Error("Valor inválido.");
+    const valorAnt = Number(row.valorRecebido) || 0;
+    if (Math.abs(valorNovo - valorAnt) > 0.0001) {
+      patch.valorRecebido = Math.round(valorNovo * 100) / 100;
+      const subtotal = Number(row.subtotalBruto) || 0;
+      if (subtotal > 0) {
+        patch.desconto = Math.round(Math.max(0, subtotal - patch.valorRecebido) * 100) / 100;
+      }
+      mudancas.push({
+        campo: "valor",
+        de: valorAnt.toFixed(2),
+        para: patch.valorRecebido.toFixed(2),
+      });
+    }
+  }
+
+  if (!mudancas.length) {
+    return { ok: true, message: "Nenhuma alteração.", mudancas: [] };
+  }
+
+  await db.update(vendas).set(patch).where(eq(vendas.id, sid));
 
   const quem = normalizeText(operador) || (await operadorAtual());
+  const resumo = mudancas.map((m) => `${m.campo}: ${m.de} → ${m.para}`).join("; ");
   await registrarLog(
-    LOG_TIPO.EDICAO_DATA_VENDA,
-    { id: sid, de: anterior, para: data, operador: quem },
+    LOG_TIPO.EDICAO_VENDA,
+    { id: sid, operador: quem, mudancas },
     true,
-    `Data da venda #${sid} alterada`
+    `Venda #${sid} alterada por ${quem}: ${resumo}`
   );
   void refreshVendasMensalMV().catch(() => {});
   return {
     ok: true,
-    message: `Data atualizada para ${formatDataHoraBR(data)}.`,
-    data,
-    dataHora: formatDataHoraBR(data),
+    message: `Venda #${sid} atualizada (${mudancas.length} campo(s)).`,
+    mudancas,
   };
+}
+
+/** @deprecated use atualizarVenda */
+export async function atualizarDataVenda(id: number, dataNova: string, operador?: string) {
+  return atualizarVenda({ id, data: dataNova }, operador);
 }
 
 export async function cancelarVenda(id: number, motivo: string, operador?: string) {
