@@ -7,6 +7,7 @@ export const NAV_LINKS: { href: string; label: string }[] = [
   { href: "/estoque-admin", label: "Alocação de item" },
   { href: "/cadastro-itens", label: "Cadastro de itens" },
   { href: "/cancelamento-vendas", label: "Cancelar venda / PRIME" },
+  { href: "/editar-data-venda", label: "Editar data da venda" },
   { href: "/ultimos-lancamentos", label: "Últimos lançamentos" },
   { href: "/estoque", label: "Estoque" },
   { href: "/relatorio-detalhado", label: "Relatório detalhado" },
@@ -54,6 +55,7 @@ export const GRUPOS_NAV: { id: string; label: string; hrefs: string[] }[] = [
       "/estoque-admin",
       "/cadastro-itens",
       "/cancelamento-vendas",
+      "/editar-data-venda",
       "/ultimos-lancamentos",
       "/estoque",
     ],
@@ -168,13 +170,26 @@ export function podeAcessarApi(paginas: PaginasPerm, method: string, pathname: s
 
   if (pathname.startsWith("/api/vendedores")) {
     if (m === "GET") {
-      return alguma("/", "/prime", "/resumo-diario", "/comissao", "/ultimos-lancamentos", "/venda-maluca", "/vendedores");
+      return alguma(
+        "/",
+        "/prime",
+        "/resumo-diario",
+        "/comissao",
+        "/ultimos-lancamentos",
+        "/editar-data-venda",
+        "/venda-maluca",
+        "/vendedores"
+      );
     }
     return tem("/vendedores");
   }
 
+  if (pathname.startsWith("/api/vendas/data")) {
+    return tem("/editar-data-venda");
+  }
+
   if (pathname.startsWith("/api/vendas")) {
-    if (m === "GET") return alguma("/", "/ultimos-lancamentos");
+    if (m === "GET") return alguma("/", "/ultimos-lancamentos", "/editar-data-venda");
     return tem("/");
   }
 

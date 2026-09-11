@@ -183,12 +183,18 @@ export async function salvarItemCadastro(dados: {
 
   let msgEstoque = "";
   if (!ilimitado) {
+    const { campoEhUnik3d } = await import("./unik");
+    const ehUnik =
+      campoEhUnik3d(subcategoriaMeep) ||
+      campoEhUnik3d(categoriaDash) ||
+      Boolean(nomeUnik);
     const { aplicarEstoqueNoCadastro } = await import("./estoque");
     msgEstoque = await aplicarEstoqueNoCadastro({
       sku,
       descricao,
-      estoqueGeral: dados.estoqueGeral,
-      alocacoes: dados.alocacoes,
+      // UNIK: GERAL só muda por lançamento/distribuição — não edita no cadastro
+      estoqueGeral: ehUnik ? undefined : dados.estoqueGeral,
+      alocacoes: ehUnik ? [] : dados.alocacoes,
     });
   }
 

@@ -73,11 +73,6 @@ export default function HomePage() {
   const [build, setBuild] = useState("");
   const [unidadesUsuario, setUnidadesUsuario] = useState<string[]>([]);
   const [vendedorPadraoId, setVendedorPadraoId] = useState("");
-  const [dataVenda, setDataVenda] = useState(() => {
-    const d = new Date();
-    const pad = (n: number) => String(n).padStart(2, "0");
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  });
   const { busy, run } = useSubmitLock();
 
   const categorias = useMemo(() => {
@@ -246,7 +241,6 @@ export default function HomePage() {
         vendedor: vendedorNome,
         id_vendedor: vendedorId,
         unidade,
-        data: dataVenda || undefined,
         desconto: Number(String(desconto).replace(",", ".")) || 0,
         itens: [
           {
@@ -286,14 +280,6 @@ export default function HomePage() {
               </option>
             ))}
           </select>
-        </div>
-        <div className="field">
-          <label>Data da venda</label>
-          <input
-            type="datetime-local"
-            value={dataVenda}
-            onChange={(e) => setDataVenda(e.target.value)}
-          />
         </div>
         {semUnidade && (
           <p className="aviso">

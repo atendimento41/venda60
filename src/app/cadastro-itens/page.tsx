@@ -190,6 +190,21 @@ export default function CadastroItensPage() {
   const photoIlimitado =
     rotuloPhoto(form.categoriaDash) || rotuloPhoto(form.subcategoriaMeep);
 
+  function textoUnik3d(s: string): boolean {
+    const t = String(s || "")
+      .trim()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toUpperCase();
+    if (!t.includes("UNIK")) return false;
+    return t.includes("3D") || /\b3\s*D\b/.test(t);
+  }
+
+  const ehItemUnik =
+    Boolean(form.nomeUnik) ||
+    textoUnik3d(form.subcategoriaMeep) ||
+    textoUnik3d(form.categoriaDash);
+
   function selecionarUnik(nome: string) {
     const p = opcoesUnik.find((x) => x.nome === nome);
     setForm((f) => ({
@@ -199,9 +214,8 @@ export default function CadastroItensPage() {
       sugestaoVenda: p?.sugestaoVenda ?? 0,
       fotoUrl: f.fotoUrl || p?.fotoUnik || f.fotoUrl,
       descricao: f.descricao || nome,
-      // UNIK traz a quantidade do depósito
-      estoqueGeral:
-        p && p.quantidade > 0 ? String(p.quantidade) : f.estoqueGeral,
+      // só exibe saldo atual do depósito; UNIK não edita GERAL no cadastro
+      estoqueGeral: p && p.quantidade > 0 ? String(p.quantidade) : f.estoqueGeral,
     }));
   }
 
@@ -241,8 +255,10 @@ export default function CadastroItensPage() {
         ilimitado: form.ilimitado,
         nomeUnik: form.nomeUnik || undefined,
         unidades: form.unidades,
-        estoqueGeral: form.ilimitado || photoIlimitado ? undefined : estoqueGeral,
-        alocacoes: form.ilimitado || photoIlimitado ? undefined : alocacoes,
+        estoqueGeral:
+          form.ilimitado || photoIlimitado || ehItemUnik ? undefined : estoqueGeral,
+        alocacoes:
+          form.ilimitado || photoIlimitado || ehItemUnik ? undefined : alocacoes,
       }),
     });
     const data = await res.json();
@@ -444,33 +460,46 @@ export default function CadastroItensPage() {
                   value={form.estoqueGeral}
                   onChange={(e) => setForm({ ...form, estoqueGeral: e.target.value })}
                   inputMode="numeric"
-                  placeholder={form.nomeUnik ? "Vem do UNIK ao vincular" : "0"}
+                  readOnly={ehItemUnik}
+                  disabled={ehItemUnik}
+                  placeholder={ehItemUnik ? "Somente leitura (UNIK)" : "0"}
                 />
                 <p className="muted">
-                  Quantidade no depósito antes de ir às lojas. Item UNIK preenche com a qtd pendente.
+                  {ehItemUnik
+                    ? "Item UNIK: o geral não se edita aqui. Ele diminui ao alocar nas unidades (Movimentação estoque)."
+                    : "Quantidade no depósito antes de ir às lojas."}
                 </p>
               </div>
-              <p style={{ fontWeight: "bold", margin: "12px 0 8px" }}>Alocar agora nas unidades</p>
-              <p className="muted">
-                Opcional: ao salvar, move do geral para a loja (ou cria estoque na loja se o geral
-                não cobrir).
-              </p>
-              {UNIDADES.map((u) => (
-                <div className="field" key={`aloc-${u}`} style={{ marginBottom: 6 }}>
-                  <label>{u}</label>
-                  <input
-                    value={form.alocarAgora[u] || ""}
-                    onChange={(e) =>
-                      setForm((f) => ({
-                        ...f,
-                        alocarAgora: { ...f.alocarAgora, [u]: e.target.value },
-                      }))
-                    }
-                    inputMode="numeric"
-                    placeholder="0"
-                  />
-                </div>
-              ))}
+              {ehItemUnik ? (
+                <p className="aviso" style={{ marginTop: 8 }}>
+                  Para alocar UNIK nas lojas, use a aba <strong>Movimentação estoque</strong> (UNIK).
+                  O estoque geral cai conforme a distribuição.
+                </p>
+              ) : (
+                <>
+                  <p style={{ fontWeight: "bold", margin: "12px 0 8px" }}>Alocar agora nas unidades</p>
+                  <p className="muted">
+                    Opcional: ao salvar, move do geral para a loja (ou cria estoque na loja se o geral
+                    não cobrir).
+                  </p>
+                  {UNIDADES.map((u) => (
+                    <div className="field" key={`aloc-${u}`} style={{ marginBottom: 6 }}>
+                      <label>{u}</label>
+                      <input
+                        value={form.alocarAgora[u] || ""}
+                        onChange={(e) =>
+                          setForm((f) => ({
+                            ...f,
+                            alocarAgora: { ...f.alocarAgora, [u]: e.target.value },
+                          }))
+                        }
+                        inputMode="numeric"
+                        placeholder="0"
+                      />
+                    </div>
+                  ))}
+                </>
+              )}
             </>
           ) : null}
 

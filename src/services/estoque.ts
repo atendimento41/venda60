@@ -413,14 +413,20 @@ export async function aplicarEstoqueNoCadastro(opts: {
   if (!sku) return "";
   const msgs: string[] = [];
 
-  if (opts.estoqueGeral != null && opts.estoqueGeral !== undefined) {
+  const { campoEhUnik3d } = await import("./unik");
+  const [itemCad] = await db.select().from(itens).where(eq(itens.sku, sku));
+  const ehUnik =
+    Boolean(itemCad) &&
+    (campoEhUnik3d(itemCad?.subcategoriaMeep) || campoEhUnik3d(itemCad?.categoriaDash));
+
+  if (!ehUnik && opts.estoqueGeral != null && opts.estoqueGeral !== undefined) {
     const q = Number(opts.estoqueGeral);
     if (!Number.isFinite(q) || q < 0) throw new Error("Estoque geral inválido.");
     await definirQuantidadeAbsoluta(sku, "GERAL", q, "CADASTRO_GERAL");
     msgs.push(`geral=${q}`);
   }
 
-  const alocs = Array.isArray(opts.alocacoes) ? opts.alocacoes : [];
+  const alocs = ehUnik ? [] : Array.isArray(opts.alocacoes) ? opts.alocacoes : [];
   for (const a of alocs) {
     const unidade = normalizeText(a.unidade);
     const q = Number(a.quantidade) || 0;
