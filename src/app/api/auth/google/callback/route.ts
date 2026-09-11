@@ -86,12 +86,14 @@ export async function GET(req: Request) {
 
     const paginas = parsePaginas(user.paginas);
     const unidades = parseUnidadesJson(user.unidades);
+    const vendedorId = String((user as { vendedor_id?: string }).vendedor_id || "").trim() || null;
     const token = await criarTokenSessao({
       id: Number(user.id),
       login: String(user.login),
       nome: String(user.nome),
       paginas,
       unidades,
+      vendedorId,
       sv: Number(user.sessao_ver) || 1,
     });
 

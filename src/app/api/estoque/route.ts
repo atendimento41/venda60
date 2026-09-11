@@ -31,6 +31,8 @@ export async function GET(req: Request) {
       subcategoria: searchParams.get("subcategoria") || undefined,
       nome: searchParams.get("nome") || undefined,
       estoqueAtual: searchParams.get("estoqueAtual") || undefined,
+      estoqueGeral: searchParams.get("estoqueGeral") || undefined,
+      foto: searchParams.get("foto") || undefined,
     };
 
     if (admin) {

@@ -12,6 +12,7 @@ type User = {
   nome: string;
   paginas: string[] | "*";
   unidades: string[];
+  vendedorId?: string | null;
   ativo: boolean;
   email?: string;
   emailVerificado?: boolean;
@@ -26,6 +27,7 @@ const VAZIO = {
   senha: "",
   paginas: [] as string[],
   unidades: [] as string[],
+  vendedorId: "",
   todas: false,
   ativo: true,
 };
@@ -45,13 +47,22 @@ function expandirPaginas(paginas: string[] | "*"): string[] {
 
 export default function UsuariosPage() {
   const [lista, setLista] = useState<User[]>([]);
+  const [vendedores, setVendedores] = useState<{ id: string; nome: string }[]>([]);
   const [form, setForm] = useState(VAZIO);
   const [msg, setMsg] = useState("");
   const [erro, setErro] = useState("");
 
   async function carregar() {
-    const d = await fetch("/api/usuarios").then((r) => r.json());
+    const [d, v] = await Promise.all([
+      fetch("/api/usuarios").then((r) => r.json()),
+      fetch("/api/vendedores?todos=1").then((r) => r.json()),
+    ]);
     setLista(asArray(d));
+    setVendedores(
+      asArray<{ id: string; nome: string; ativo?: boolean }>(v)
+        .filter((x) => x.ativo !== false)
+        .map((x) => ({ id: x.id, nome: x.nome }))
+    );
   }
 
   useEffect(() => {
@@ -119,6 +130,7 @@ export default function UsuariosPage() {
         senha: form.senha,
         paginas: form.paginas,
         unidades: form.unidades,
+        vendedorId: form.vendedorId || null,
         todas: form.todas,
         ativo: form.ativo,
       }),
@@ -213,6 +225,24 @@ export default function UsuariosPage() {
             </p>
           )}
 
+          <div className="field" style={{ marginTop: 16 }}>
+            <label>Vendedor vinculado</label>
+            <select
+              value={form.vendedorId}
+              onChange={(e) => setForm({ ...form, vendedorId: e.target.value })}
+            >
+              <option value="">Nenhum</option>
+              {vendedores.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.nome} ({v.id})
+                </option>
+              ))}
+            </select>
+            <p className="muted" style={{ fontSize: "0.85rem", marginTop: 4 }}>
+              No lançamento de venda, este usuário já entra com o nome e as unidades desse vendedor.
+            </p>
+          </div>
+
           <p style={{ fontWeight: "bold", marginBottom: 8, marginTop: 16 }}>Abas liberadas</p>
           <label className="check-inline" style={{ marginBottom: 12 }}>
             <input type="checkbox" checked={form.todas} onChange={(e) => toggleTodas(e.target.checked)} />
@@ -275,6 +305,7 @@ export default function UsuariosPage() {
                 <th>Usuário</th>
                 <th>E-mail</th>
                 <th>Unidades</th>
+                <th>Vendedor</th>
                 <th>Abas</th>
                 <th>Ativo</th>
                 <th></th>
@@ -294,6 +325,7 @@ export default function UsuariosPage() {
                       senha: "",
                       paginas: expandirPaginas(u.paginas),
                       unidades: u.unidades || [],
+                      vendedorId: u.vendedorId || "",
                       todas: u.paginas === "*",
                       ativo: u.ativo,
                     })
@@ -326,6 +358,11 @@ export default function UsuariosPage() {
                   </td>
                   <td>
                     {!u.unidades?.length ? "Todas" : u.unidades.join(", ")}
+                  </td>
+                  <td>
+                    {u.vendedorId
+                      ? vendedores.find((v) => v.id === u.vendedorId)?.nome || u.vendedorId
+                      : "—"}
                   </td>
                   <td>{u.paginas === "*" ? "Todas" : expandirPaginas(u.paginas).length}</td>
                   <td>{u.ativo ? "Sim" : "Não"}</td>

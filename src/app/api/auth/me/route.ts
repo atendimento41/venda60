@@ -14,6 +14,7 @@ export async function GET() {
       nome: sessao.nome,
       login: sessao.login,
       unidades: sessao.unidades || [],
+      vendedorId: sessao.vendedorId || null,
     },
     links: linksPermitidos(sessao.paginas).map((l) => ({ href: l.href, label: l.label })),
   });

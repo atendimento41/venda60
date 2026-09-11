@@ -12,7 +12,7 @@ type Linha = {
   ilimitado?: boolean;
 };
 
-type ItemOpcao = { sku: string; descricao: string };
+type ItemOpcao = { sku: string; descricao: string; estoqueGeral?: number; ilimitado?: boolean };
 
 function nomeBate(nome: string, busca: string) {
   const n = String(nome || "")
@@ -63,10 +63,18 @@ export default function EstoqueAdminPage() {
     [opcoes.itens, sku]
   );
 
+  const estoqueGeralAtual = useMemo(() => {
+    if (!sku) return 0;
+    const row = linhas.find((l) => l.sku === sku && String(l.unidade).toUpperCase() === "GERAL");
+    if (row) return row.estoque;
+    return itemSel?.estoqueGeral ?? 0;
+  }, [linhas, sku, itemSel]);
+
   const sugestoes = useMemo(() => {
     const q = buscaItem.trim();
     if (!q) return [];
     if (sku && itemSel && q === itemSel.descricao) return [];
+    // Inclui itens com estoque geral 0 — todos os ativos (não UNIK) vêm da API
     return opcoes.itens.filter((i) => nomeBate(i.descricao, q)).slice(0, 20);
   }, [opcoes.itens, buscaItem, sku, itemSel]);
 
@@ -90,12 +98,12 @@ export default function EstoqueAdminPage() {
           sku,
           unidade: u,
           item: row?.item || nome,
-          estoque: row?.estoque ?? 0,
+          estoque: row?.estoque ?? (u.toUpperCase() === "GERAL" ? estoqueGeralAtual : 0),
           ilimitado: row?.ilimitado,
           cadastrado: Boolean(row),
         };
       });
-  }, [linhas, sku, itemSel, opcoes.unidades, filtroUnidadeTabela]);
+  }, [linhas, sku, itemSel, opcoes.unidades, filtroUnidadeTabela, estoqueGeralAtual]);
 
   function escolherItem(i: ItemOpcao) {
     setSku(i.sku);
@@ -124,6 +132,12 @@ export default function EstoqueAdminPage() {
       return;
     }
     setMsg(data.message);
+    // refresh opções (estoque geral) + linhas
+    fetch("/api/estoque?opcoes=admin")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d && !d.error) setOpcoes({ unidades: asArray(d.unidades), itens: asArray(d.itens) });
+      });
     carregar();
   }
 
@@ -135,8 +149,8 @@ export default function EstoqueAdminPage() {
   return (
     <AppShell title="Alocação de item">
       <p className="muted">
-        Aloque nas lojas digitando o nome do item. UNIK 3D não entra aqui — fica nas telas UNIK. A tabela de baixo
-        mostra só o item selecionado.
+        Aloque nas lojas digitando o nome do item (também com estoque geral 0). UNIK 3D fica nas telas UNIK.
+        Estoque geral = depósito ainda não enviado às lojas.
       </p>
 
       <div className="filters">
@@ -179,6 +193,11 @@ export default function EstoqueAdminPage() {
                   }}
                 >
                   {i.descricao}
+                  <span className="muted">
+                    {i.ilimitado
+                      ? " · ilimitado"
+                      : ` · geral: ${Number(i.estoqueGeral) || 0}`}
+                  </span>
                 </button>
               ))}
             </div>
@@ -191,6 +210,14 @@ export default function EstoqueAdminPage() {
           {itemSel && sku ? (
             <p className="muted" style={{ marginTop: 6 }}>
               Selecionado: <strong>{itemSel.descricao}</strong>
+              {itemSel.ilimitado ? (
+                " · ilimitado"
+              ) : (
+                <>
+                  {" · "}
+                  Estoque geral: <strong>{estoqueGeralAtual}</strong>
+                </>
+              )}
             </p>
           ) : null}
         </div>
@@ -200,7 +227,7 @@ export default function EstoqueAdminPage() {
             <option value="">Selecione</option>
             {opcoes.unidades.map((u) => (
               <option key={u} value={u}>
-                {u}
+                {u === "GERAL" ? "GERAL (depósito)" : u}
               </option>
             ))}
           </select>
@@ -209,17 +236,26 @@ export default function EstoqueAdminPage() {
 
       {sku && unidade && (
         <p className="muted">
-          Estoque atual:{" "}
+          Estoque atual em {unidade === "GERAL" ? "GERAL (depósito)" : unidade}:{" "}
           <strong>
             {atual?.ilimitado ? "Ilimitado" : atual ? atual.estoque : "ainda não cadastrado nesta unidade"}
           </strong>
+          {unidade.toUpperCase() !== "GERAL" ? (
+            <>
+              {" · "}
+              Geral: <strong>{estoqueGeralAtual}</strong>
+            </>
+          ) : null}
         </p>
       )}
 
       <div className="grid-2">
         <section>
           <h2>Adicionar ou retirar</h2>
-          <p className="muted">Informa quantas unidades entram ou saem do estoque atual. Ex.: 5 para adicionar 5, ou 5 e clicar em Retirar.</p>
+          <p className="muted">
+            Informa quantas unidades entram ou saem do estoque atual. Ex.: 5 para adicionar 5, ou 5 e
+            clicar em Retirar.
+          </p>
           <div className="field">
             <label>Quantas unidades</label>
             <input
@@ -260,7 +296,10 @@ export default function EstoqueAdminPage() {
 
         <section>
           <h2>Definir quantidade exata</h2>
-          <p className="muted">Substitui o estoque pelo valor informado. Ex.: se está 12 e você coloca 20, o estoque passa a ser 20.</p>
+          <p className="muted">
+            Substitui o estoque pelo valor informado. Ex.: se está 12 e você coloca 20, o estoque passa
+            a ser 20. Aceita 0.
+          </p>
           <div className="field">
             <label>Nova quantidade</label>
             <input
@@ -316,14 +355,14 @@ export default function EstoqueAdminPage() {
             <option value="">Todas</option>
             {opcoes.unidades.map((u) => (
               <option key={u} value={u}>
-                {u}
+                {u === "GERAL" ? "GERAL (depósito)" : u}
               </option>
             ))}
           </select>
         </div>
       </div>
       {!sku ? (
-        <p className="muted">Selecione um item acima para ver o estoque dele em cada loja.</p>
+        <p className="muted">Selecione um item acima para ver o estoque dele em cada loja e no geral.</p>
       ) : (
         <table>
           <thead>
@@ -350,7 +389,7 @@ export default function EstoqueAdminPage() {
                     if (!l.ilimitado) setQtdExata(String(l.estoque));
                   }}
                 >
-                  <td>{l.unidade}</td>
+                  <td>{l.unidade === "GERAL" ? "GERAL (depósito)" : l.unidade}</td>
                   <td>{l.item}</td>
                   <td className="num">{l.ilimitado ? "Ilimitado" : l.estoque}</td>
                 </tr>

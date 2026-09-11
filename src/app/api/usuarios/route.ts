@@ -40,7 +40,7 @@ export async function GET(req: Request) {
   const gate = await exigirSessao(req);
   if (isResp(gate)) return gate;
   const rs = await getClient().execute(
-    "SELECT id, login, nome, paginas, unidades, ativo, email, email_verificado_em FROM usuarios ORDER BY nome"
+    "SELECT id, login, nome, paginas, unidades, ativo, email, email_verificado_em, vendedor_id FROM usuarios ORDER BY nome"
   );
   return NextResponse.json(
     (rs.rows || []).map((u) => {
@@ -51,6 +51,7 @@ export async function GET(req: Request) {
         nome: u.nome,
         paginas: parsePaginas(u.paginas),
         unidades: parseUnidadesJson(u.unidades),
+        vendedorId: String(u.vendedor_id || "").trim() || null,
         ativo: Boolean(u.ativo),
         email: st.email,
         emailVerificado: st.emailVerificado,
@@ -76,6 +77,7 @@ export async function POST(req: Request) {
     const senha = String(body.senha || "");
     const paginas = serializarPaginas(body.todas ? "*" : body.paginas);
     const unidades = serializarUnidades(body.unidades ?? []);
+    const vendedorId = String(body.vendedorId || body.vendedor_id || "").trim() || null;
     const ativo = body.ativo !== false;
 
     if (!nome) throw new Error("Nome obrigatório.");
@@ -87,7 +89,7 @@ export async function POST(req: Request) {
     if (body.id) {
       const id = Number(body.id);
       const atual = await client.execute({
-        sql: "SELECT login, paginas, unidades, ativo, email FROM usuarios WHERE id = ? LIMIT 1",
+        sql: "SELECT login, paginas, unidades, ativo, email, vendedor_id FROM usuarios WHERE id = ? LIMIT 1",
         args: [id],
       });
       const row = atual.rows[0] as
@@ -97,26 +99,28 @@ export async function POST(req: Request) {
             unidades?: string;
             ativo: boolean;
             email?: string | null;
+            vendedor_id?: string | null;
           }
         | undefined;
       const mudouPermissao =
         row &&
         (String(row.paginas) !== paginas ||
           String(row.unidades || "[]") !== unidades ||
+          String(row.vendedor_id || "") !== String(vendedorId || "") ||
           Boolean(row.ativo) !== ativo);
 
       if (senha) {
         const erroSenha = validarSenhaSegura(senha);
         if (erroSenha) throw new Error(erroSenha);
         await client.execute({
-          sql: "UPDATE usuarios SET nome = ?, paginas = ?, unidades = ?, ativo = ?, senha_hash = ? WHERE id = ?",
-          args: [nome, paginas, unidades, ativo, hashSenha(senha), id],
+          sql: "UPDATE usuarios SET nome = ?, paginas = ?, unidades = ?, vendedor_id = ?, ativo = ?, senha_hash = ? WHERE id = ?",
+          args: [nome, paginas, unidades, vendedorId, ativo, hashSenha(senha), id],
         });
         await incrementarSessaoVer(id);
       } else {
         await client.execute({
-          sql: "UPDATE usuarios SET nome = ?, paginas = ?, unidades = ?, ativo = ? WHERE id = ?",
-          args: [nome, paginas, unidades, ativo, id],
+          sql: "UPDATE usuarios SET nome = ?, paginas = ?, unidades = ?, vendedor_id = ?, ativo = ? WHERE id = ?",
+          args: [nome, paginas, unidades, vendedorId, ativo, id],
         });
         if (mudouPermissao) await incrementarSessaoVer(id);
       }
@@ -148,8 +152,8 @@ export async function POST(req: Request) {
     const erroSenha = validarSenhaSegura(senha);
     if (erroSenha) throw new Error(erroSenha);
     await client.execute({
-      sql: "INSERT INTO usuarios (login, nome, senha_hash, paginas, unidades, ativo) VALUES (?, ?, ?, ?, ?, TRUE)",
-      args: [login, nome, hashSenha(senha), paginas, unidades],
+      sql: "INSERT INTO usuarios (login, nome, senha_hash, paginas, unidades, vendedor_id, ativo) VALUES (?, ?, ?, ?, ?, ?, TRUE)",
+      args: [login, nome, hashSenha(senha), paginas, unidades, vendedorId],
     });
     const novoId = await idPorLogin(login);
     if (!novoId) throw new Error("Usuário criado, mas não foi possível obter o ID.");

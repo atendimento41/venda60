@@ -72,6 +72,12 @@ export default function HomePage() {
   const [erro, setErro] = useState("");
   const [build, setBuild] = useState("");
   const [unidadesUsuario, setUnidadesUsuario] = useState<string[]>([]);
+  const [vendedorPadraoId, setVendedorPadraoId] = useState("");
+  const [dataVenda, setDataVenda] = useState(() => {
+    const d = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  });
   const { busy, run } = useSubmitLock();
 
   const categorias = useMemo(() => {
@@ -124,19 +130,34 @@ export default function HomePage() {
     const [v, b, me] = await Promise.all([
       apiGet<VendedorClient[]>("/api/vendedores"),
       apiGet<{ build: string }>("/api/build"),
-      apiGet<{ usuario?: { unidades?: string[] } }>("/api/auth/me"),
+      apiGet<{
+        usuario?: { unidades?: string[]; vendedorId?: string | null };
+      }>("/api/auth/me"),
     ]);
     if (v.error) setErro(v.error);
     const uu = asArray(me.data?.usuario?.unidades);
     const lista = asArray(v.data);
     setUnidadesUsuario(uu);
     setBuild(b.data?.build || "");
-    // Usuário com unidade vinculada (ex.: tgs_venda → TGS) só vê vendedores dessa loja.
-    setVendedores(
+    const filtrados =
       uu.length === 0
         ? lista
-        : lista.filter((vend) => intersecaoUnidades(vend.unidades, uu).length > 0)
-    );
+        : lista.filter((vend) => intersecaoUnidades(vend.unidades, uu).length > 0);
+    setVendedores(filtrados);
+
+    const vinculo = String(me.data?.usuario?.vendedorId || "").trim();
+    setVendedorPadraoId(vinculo);
+    if (vinculo && filtrados.some((x) => x.id === vinculo)) {
+      // pré-seleciona vendedor do usuário
+      const vend = filtrados.find((x) => x.id === vinculo)!;
+      setVendedorId(vend.id);
+      setVendedorNome(vend.nome);
+      const disponiveis = intersecaoUnidades(vend.unidades, uu);
+      setUnidadesDisp(disponiveis);
+      if (disponiveis.length === 1) {
+        carregarItens(disponiveis[0]);
+      }
+    }
   }
 
   useEffect(() => {
@@ -225,6 +246,7 @@ export default function HomePage() {
         vendedor: vendedorNome,
         id_vendedor: vendedorId,
         unidade,
+        data: dataVenda || undefined,
         desconto: Number(String(desconto).replace(",", ".")) || 0,
         itens: [
           {
@@ -260,9 +282,18 @@ export default function HomePage() {
             {vendedores.map((v) => (
               <option key={v.id} value={v.id}>
                 {v.nome}
+                {vendedorPadraoId === v.id ? " · seu vínculo" : ""}
               </option>
             ))}
           </select>
+        </div>
+        <div className="field">
+          <label>Data da venda</label>
+          <input
+            type="datetime-local"
+            value={dataVenda}
+            onChange={(e) => setDataVenda(e.target.value)}
+          />
         </div>
         {semUnidade && (
           <p className="aviso">

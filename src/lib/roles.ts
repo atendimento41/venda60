@@ -95,6 +95,8 @@ export type SessaoUsuario = {
    * Se preenchido, só pode registrar venda/PRIME nessas lojas.
    */
   unidades?: string[];
+  /** Vendedor vinculado ao usuário (pré-preenche lançamento). */
+  vendedorId?: string | null;
   /** Versão da sessão — invalida token ao alterar permissões/senha. */
   sv?: number;
   exp: number;

@@ -17,6 +17,7 @@ type Item = {
   fotoUrl: string;
   ilimitado?: boolean;
   unidades?: string[];
+  estoqueGeral?: number;
 };
 
 type PendenteUnik = {
@@ -41,6 +42,8 @@ const VAZIO = {
   custo: 0,
   sugestaoVenda: 0,
   unidades: [] as string[],
+  estoqueGeral: "",
+  alocarAgora: {} as Record<string, string>,
 };
 
 function rotuloPhoto(s: string): boolean {
@@ -196,6 +199,9 @@ export default function CadastroItensPage() {
       sugestaoVenda: p?.sugestaoVenda ?? 0,
       fotoUrl: f.fotoUrl || p?.fotoUnik || f.fotoUrl,
       descricao: f.descricao || nome,
+      // UNIK traz a quantidade do depósito
+      estoqueGeral:
+        p && p.quantidade > 0 ? String(p.quantidade) : f.estoqueGeral,
     }));
   }
 
@@ -210,6 +216,17 @@ export default function CadastroItensPage() {
       setErro("Informe a descrição do item.");
       return;
     }
+    const alocacoes = Object.entries(form.alocarAgora)
+      .map(([unidade, q]) => ({
+        unidade,
+        quantidade: Number(String(q).replace(",", ".")) || 0,
+      }))
+      .filter((a) => a.quantidade > 0);
+
+    const estoqueGeralRaw = String(form.estoqueGeral || "").trim();
+    const estoqueGeral =
+      estoqueGeralRaw === "" ? undefined : Number(estoqueGeralRaw.replace(",", "."));
+
     const res = await fetch("/api/itens", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -224,6 +241,8 @@ export default function CadastroItensPage() {
         ilimitado: form.ilimitado,
         nomeUnik: form.nomeUnik || undefined,
         unidades: form.unidades,
+        estoqueGeral: form.ilimitado || photoIlimitado ? undefined : estoqueGeral,
+        alocacoes: form.ilimitado || photoIlimitado ? undefined : alocacoes,
       }),
     });
     const data = await res.json();
@@ -306,6 +325,8 @@ export default function CadastroItensPage() {
       custo: i.custo ?? 0,
       sugestaoVenda: i.sugestaoVenda ?? 0,
       unidades: i.unidades || [],
+      estoqueGeral: i.estoqueGeral != null ? String(i.estoqueGeral) : "",
+      alocarAgora: {},
     });
     setErro("");
     setMsg("");
@@ -414,6 +435,44 @@ export default function CadastroItensPage() {
             Estoque ilimitado (sem quantidade)
             {photoIlimitado ? " · PHOTO" : ""}
           </label>
+
+          {!form.ilimitado && !photoIlimitado ? (
+            <>
+              <div className="field" style={{ marginTop: 12 }}>
+                <label>Estoque geral (depósito)</label>
+                <input
+                  value={form.estoqueGeral}
+                  onChange={(e) => setForm({ ...form, estoqueGeral: e.target.value })}
+                  inputMode="numeric"
+                  placeholder={form.nomeUnik ? "Vem do UNIK ao vincular" : "0"}
+                />
+                <p className="muted">
+                  Quantidade no depósito antes de ir às lojas. Item UNIK preenche com a qtd pendente.
+                </p>
+              </div>
+              <p style={{ fontWeight: "bold", margin: "12px 0 8px" }}>Alocar agora nas unidades</p>
+              <p className="muted">
+                Opcional: ao salvar, move do geral para a loja (ou cria estoque na loja se o geral
+                não cobrir).
+              </p>
+              {UNIDADES.map((u) => (
+                <div className="field" key={`aloc-${u}`} style={{ marginBottom: 6 }}>
+                  <label>{u}</label>
+                  <input
+                    value={form.alocarAgora[u] || ""}
+                    onChange={(e) =>
+                      setForm((f) => ({
+                        ...f,
+                        alocarAgora: { ...f.alocarAgora, [u]: e.target.value },
+                      }))
+                    }
+                    inputMode="numeric"
+                    placeholder="0"
+                  />
+                </div>
+              ))}
+            </>
+          ) : null}
 
           {editando && (
             <label className="check-inline" style={{ marginTop: 12 }}>

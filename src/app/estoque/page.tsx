@@ -17,6 +17,7 @@ type Linha = {
   retirada: number;
   vendidos: number;
   estoqueAtual: number;
+  estoqueGeral?: number;
   ilimitado?: boolean;
 };
 
@@ -29,6 +30,8 @@ export default function EstoquePage() {
   const [categoria, setCategoria] = useState("");
   const [subcategoria, setSubcategoria] = useState("");
   const [filtroEstoque, setFiltroEstoque] = useState("gt0");
+  const [filtroGeral, setFiltroGeral] = useState("");
+  const [filtroFoto, setFiltroFoto] = useState("");
   const [res, setRes] = useState<{ linhas: Linha[]; totalSkus: number; totalEstoque: number; formula?: string } | null>(
     null
   );
@@ -53,6 +56,8 @@ export default function EstoquePage() {
     if (categoria) q.set("categoria", categoria);
     if (subcategoria) q.set("subcategoria", subcategoria);
     if (filtroEstoque) q.set("estoqueAtual", filtroEstoque);
+    if (filtroGeral) q.set("estoqueGeral", filtroGeral);
+    if (filtroFoto) q.set("foto", filtroFoto);
     const d = await fetch(`/api/estoque?${q}`).then((r) => r.json());
     setCarregando(false);
     if (d?.error) {
@@ -100,14 +105,15 @@ export default function EstoquePage() {
   return (
     <AppShell title="Consulta de Estoque">
       <p className="muted">
-        Uma linha por unidade da loja, todos os itens (não só UNIK 3D). Estoque = atual + vendidos + retiradas nesta
-        unidade. Para incluir ou retirar quantidade, use Alocação de item.
+        Uma linha por unidade da loja. Estoque geral = depósito (itens ainda não enviados às lojas).
+        Para alocar, use Alocação de item.
       </p>
       <div className="filters">
         <div className="field">
           <label>Unidade</label>
           <select value={unidade} onChange={(e) => setUnidade(e.target.value)}>
             <option value="">Todas as lojas</option>
+            <option value="GERAL">GERAL (depósito)</option>
             {opcoes.unidades
               .filter((u) => u.toUpperCase() !== "GERAL")
               .map((u) => (
@@ -146,12 +152,28 @@ export default function EstoquePage() {
           </select>
         </div>
         <div className="field">
-          <label>Estoque atual</label>
+          <label>Estoque na loja</label>
           <select value={filtroEstoque} onChange={(e) => setFiltroEstoque(e.target.value)}>
             <option value="">Todos</option>
-            <option value="gt0">Na loja (maior que 0)</option>
+            <option value="gt0">Maior que 0</option>
             <option value="eq0">Igual a 0</option>
             <option value="lt0">Menor que 0</option>
+          </select>
+        </div>
+        <div className="field">
+          <label>Estoque geral</label>
+          <select value={filtroGeral} onChange={(e) => setFiltroGeral(e.target.value)}>
+            <option value="">Todos</option>
+            <option value="gt0">Maior que 0</option>
+            <option value="eq0">Igual a 0</option>
+          </select>
+        </div>
+        <div className="field">
+          <label>Foto</label>
+          <select value={filtroFoto} onChange={(e) => setFiltroFoto(e.target.value)}>
+            <option value="">Todas</option>
+            <option value="sem">Sem foto</option>
+            <option value="com">Com foto</option>
           </select>
         </div>
       </div>
@@ -172,6 +194,7 @@ export default function EstoquePage() {
             "Retirada",
             "Vendidos",
             "Estoque atual",
+            "Estoque geral",
           ]}
           linhas={linhas.map((l) => [
             l.unidade,
@@ -183,6 +206,7 @@ export default function EstoquePage() {
             l.ilimitado ? "—" : l.retirada,
             l.ilimitado ? "—" : l.vendidos,
             l.ilimitado ? "Ilimitado" : l.estoqueAtual,
+            l.ilimitado ? "—" : l.estoqueGeral ?? 0,
           ])}
           rodape={res?.formula}
           disabled={!res || linhas.length === 0}
@@ -206,12 +230,13 @@ export default function EstoquePage() {
                   <th className="num">Retirada</th>
                   <th className="num">Vendidos</th>
                   <th className="num">Estoque atual</th>
+                  <th className="num">Estoque geral</th>
                 </tr>
               </thead>
               <tbody>
                 {linhas.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="muted">
+                    <td colSpan={11} className="muted">
                       Nenhum item neste filtro.
                     </td>
                   </tr>
@@ -239,6 +264,7 @@ export default function EstoquePage() {
                       <td className="num">{l.ilimitado ? "—" : l.retirada}</td>
                       <td className="num">{l.ilimitado ? "—" : l.vendidos}</td>
                       <td className="num">{l.ilimitado ? "Ilimitado" : l.estoqueAtual}</td>
+                      <td className="num">{l.ilimitado ? "—" : l.estoqueGeral ?? 0}</td>
                     </tr>
                   ))
                 )}

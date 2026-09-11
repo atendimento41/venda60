@@ -174,6 +174,10 @@ export async function getEstoqueConsulta(filtros: {
   categoria?: string | null;
   subcategoria?: string | null;
   estoqueAtual?: string | null;
+  /** Filtro do depósito GERAL: gt0 | eq0 | (vazio = todos). */
+  estoqueGeral?: string | null;
+  /** sem = sem foto; com = com foto; vazio = todos. */
+  foto?: string | null;
 }) {
   const unidadeF = normalizeUpper(filtros.unidade || "");
   const catF = normalizeUpper(filtros.categoria || "");
@@ -186,12 +190,16 @@ export async function getEstoqueConsulta(filtros: {
   const vendPor = await agregarVendasPorSkuUnidade();
   const movs = await db.select().from(movimentosEstoque);
 
+  const geralPorSku: Record<string, number> = {};
   const estPor: Record<string, number> = {};
   for (const row of estRows) {
     const uni = normalizeUpper(row.unidade);
-    if (uni === geral) continue;
     const up = normalizeUpper(row.sku);
     if (!itemPorSku[up] || itemPorSku[up].ilimitado) continue;
+    if (uni === geral) {
+      geralPorSku[up] = (geralPorSku[up] || 0) + (Number(row.quantidade) || 0);
+      continue;
+    }
     estPor[`${up}|${uni}`] = (estPor[`${up}|${uni}`] || 0) + (Number(row.quantidade) || 0);
   }
 
@@ -209,6 +217,13 @@ export async function getEstoqueConsulta(filtros: {
   }
 
   const chaves = new Set([...Object.keys(estPor), ...Object.keys(vendPor), ...Object.keys(retPor)]);
+  // Inclui SKUs que só têm GERAL (ainda não foram às lojas) quando filtro geral/foto pedir
+  for (const up of Object.keys(geralPorSku)) {
+    if (![...chaves].some((k) => k.startsWith(up + "|"))) {
+      // placeholder: será expandido só se unidade vazia — adicionamos linha sintética depois
+    }
+  }
+
   let linhas = [...chaves]
     .map((key) => {
       const [up, uni] = key.split("|");
@@ -217,6 +232,7 @@ export async function getEstoqueConsulta(filtros: {
       const vendidos = qtdArredEst(vendPor[key] || 0);
       const retirada = qtdArredEst(retPor[key] || 0);
       const estoqueTotal = qtdArredEst(estoqueAtual + vendidos + retirada);
+      const estoqueGeral = qtdArredEst(geralPorSku[up] || 0);
       const unidade =
         UNIDADES_PADRAO.find((u) => normalizeUpper(u) === uni) ||
         estRows.find((r) => normalizeUpper(r.unidade) === uni)?.unidade ||
@@ -233,6 +249,7 @@ export async function getEstoqueConsulta(filtros: {
         retirada,
         vendidos,
         estoqueAtual,
+        estoqueGeral,
         ilimitado: false,
       };
     })
@@ -241,22 +258,68 @@ export async function getEstoqueConsulta(filtros: {
       if (catF && normalizeUpper(l.categoria) !== catF) return false;
       if (subF && normalizeUpper(l.subcategoria) !== subF) return false;
       return true;
-    })
-    .sort((a, b) => {
-      const u = normalizeUpper(a.unidade).localeCompare(normalizeUpper(b.unidade), "pt-BR");
-      if (u) return u;
-      return normalizeUpper(a.item).localeCompare(normalizeUpper(b.item), "pt-BR");
     });
+
+  // Itens só no GERAL (não foram para lojas) — uma linha com unidade GERAL
+  if (!unidadeF || unidadeF === geral) {
+    for (const [up, qG] of Object.entries(geralPorSku)) {
+      const item = itemPorSku[up];
+      if (!item || item.ilimitado) continue;
+      if (catF && normalizeUpper(item.categoriaDash) !== catF) continue;
+      if (subF && normalizeUpper(item.subcategoriaMeep) !== subF) continue;
+      const jaTemLoja = linhas.some((l) => normalizeUpper(l.sku) === up);
+      if (jaTemLoja && unidadeF !== geral) continue;
+      if (unidadeF === geral || !jaTemLoja) {
+        linhas.push({
+          unidade: "GERAL",
+          sku: item.sku,
+          item: item.descricao,
+          categoria: item.categoriaDash || "",
+          subcategoria: item.subcategoriaMeep || "",
+          precoI: Number(item.preco) || 0,
+          fotoUrl: item.fotoUrl || "",
+          estoque: qtdArredEst(qG),
+          retirada: 0,
+          vendidos: 0,
+          estoqueAtual: qtdArredEst(qG),
+          estoqueGeral: qtdArredEst(qG),
+          ilimitado: false,
+        });
+      }
+    }
+  }
+
+  // Completa estoqueGeral em linhas de loja
+  for (const l of linhas) {
+    if (normalizeUpper(l.unidade) === geral) continue;
+    l.estoqueGeral = qtdArredEst(geralPorSku[normalizeUpper(l.sku)] || 0);
+  }
+
+  linhas.sort((a, b) => {
+    const u = normalizeUpper(a.unidade).localeCompare(normalizeUpper(b.unidade), "pt-BR");
+    if (u) return u;
+    return normalizeUpper(a.item).localeCompare(normalizeUpper(b.item), "pt-BR");
+  });
 
   const filtroEst = normalizeText(filtros.estoqueAtual);
   if (filtroEst === "eq0") linhas = linhas.filter((r) => Math.abs(r.estoqueAtual) < 1e-9);
   else if (filtroEst === "lt0") linhas = linhas.filter((r) => r.estoqueAtual < -1e-9);
   else if (filtroEst === "gt0") linhas = linhas.filter((r) => r.estoqueAtual > 1e-9);
 
+  const filtroGeral = normalizeText(filtros.estoqueGeral);
+  if (filtroGeral === "eq0") linhas = linhas.filter((r) => Math.abs(r.estoqueGeral) < 1e-9);
+  else if (filtroGeral === "gt0") linhas = linhas.filter((r) => r.estoqueGeral > 1e-9);
+
+  const filtroFoto = normalizeText(filtros.foto).toLowerCase();
+  if (filtroFoto === "sem") linhas = linhas.filter((r) => !String(r.fotoUrl || "").trim());
+  else if (filtroFoto === "com") linhas = linhas.filter((r) => Boolean(String(r.fotoUrl || "").trim()));
+
   for (const item of allItens) {
     if (!item.ilimitado) continue;
     if (catF && normalizeUpper(item.categoriaDash) !== catF) continue;
     if (subF && normalizeUpper(item.subcategoriaMeep) !== subF) continue;
+    if (filtroFoto === "sem" && String(item.fotoUrl || "").trim()) continue;
+    if (filtroFoto === "com" && !String(item.fotoUrl || "").trim()) continue;
     linhas.push({
       unidade: unidadeF ? String(filtros.unidade) : "Todas",
       sku: item.sku,
@@ -269,6 +332,7 @@ export async function getEstoqueConsulta(filtros: {
       retirada: 0,
       vendidos: 0,
       estoqueAtual: 0,
+      estoqueGeral: 0,
       ilimitado: true,
     });
   }
@@ -278,7 +342,8 @@ export async function getEstoqueConsulta(filtros: {
     linhas,
     totalSkus: linhas.length,
     totalEstoque: linhas.filter((l) => !l.ilimitado).reduce((s, l) => s + l.estoqueAtual, 0),
-    formula: "Estoque = atual + vendidos + retiradas nesta unidade. Mostra todos os itens, não só UNIK 3D.",
+    formula:
+      "Estoque = atual + vendidos + retiradas na unidade. Estoque geral = depósito (ainda não enviado às lojas).",
   };
 }
 
@@ -291,12 +356,7 @@ export async function listarLinhasEstoqueAdmin(filtros: {
   const res = await getEstoqueFiltrado(filtros);
   const { campoEhUnik3d } = await import("./unik");
   let linhas = res.linhas
-    .filter(
-      (l) =>
-        !campoEhUnik3d(l.subcategoria) &&
-        !campoEhUnik3d(l.categoria) &&
-        normalizeUpper(l.unidade) !== "GERAL"
-    )
+    .filter((l) => !campoEhUnik3d(l.subcategoria) && !campoEhUnik3d(l.categoria))
     .map((l, i) => ({ ...l, sheetRow: i + 1 }));
   if (filtros.nome) {
     const n = normalizeUpper(filtros.nome);
@@ -316,6 +376,75 @@ async function recusarAlocacaoUnik3d(sku: string) {
   }
 }
 
+/** Define quantidade absoluta (cria linha se não existir). Aceita GERAL. */
+async function definirQuantidadeAbsoluta(
+  sku: string,
+  unidade: string,
+  quantidade: number,
+  tipo: string,
+) {
+  const [item] = await db.select().from(itens).where(eq(itens.sku, sku));
+  if (!item?.ativo) throw new Error("SKU não encontrado como item ativo.");
+  if (item.ilimitado) return Number(quantidade) || 0;
+
+  const [linha] = await db
+    .select()
+    .from(estoque)
+    .where(and(eq(estoque.sku, sku), eq(estoque.unidade, unidade)));
+  const atual = linha ? Number(linha.quantidade) || 0 : 0;
+  const alvo = Number(quantidade) || 0;
+  if (alvo < 0) throw new Error("Quantidade inválida.");
+  const delta = alvo - atual;
+  if (delta === 0) return alvo;
+  return movimento(sku, unidade, delta, tipo);
+}
+
+/**
+ * No cadastro do item: grava estoque GERAL e/ou aloca nas lojas.
+ * Alocações saem do GERAL quando houver saldo (senão só entram na loja).
+ */
+export async function aplicarEstoqueNoCadastro(opts: {
+  sku: string;
+  descricao: string;
+  estoqueGeral?: number | null;
+  alocacoes?: { unidade: string; quantidade: number }[];
+}): Promise<string> {
+  const sku = normalizeText(opts.sku);
+  if (!sku) return "";
+  const msgs: string[] = [];
+
+  if (opts.estoqueGeral != null && opts.estoqueGeral !== undefined) {
+    const q = Number(opts.estoqueGeral);
+    if (!Number.isFinite(q) || q < 0) throw new Error("Estoque geral inválido.");
+    await definirQuantidadeAbsoluta(sku, "GERAL", q, "CADASTRO_GERAL");
+    msgs.push(`geral=${q}`);
+  }
+
+  const alocs = Array.isArray(opts.alocacoes) ? opts.alocacoes : [];
+  for (const a of alocs) {
+    const unidade = normalizeText(a.unidade);
+    const q = Number(a.quantidade) || 0;
+    if (!unidade || normalizeUpper(unidade) === "GERAL" || q <= 0) continue;
+    await recusarAlocacaoUnik3d(sku);
+
+    const [geral] = await db
+      .select()
+      .from(estoque)
+      .where(and(eq(estoque.sku, sku), eq(estoque.unidade, "GERAL")));
+    const saldoGeral = Number(geral?.quantidade) || 0;
+    if (saldoGeral >= q) {
+      await movimento(sku, "GERAL", -q, "ALOCACAO_CADASTRO");
+      await movimento(sku, unidade, q, "ALOCACAO_CADASTRO");
+    } else {
+      await definirQuantidadeAbsoluta(sku, unidade, q, "CADASTRO_UNIDADE");
+    }
+    msgs.push(`${unidade}=${q}`);
+  }
+
+  if (!msgs.length) return "";
+  return ` · Estoque: ${msgs.join(", ")}`;
+}
+
 export async function adminEstoqueCadastrar(dados: {
   sku: string;
   unidade: string;
@@ -325,7 +454,6 @@ export async function adminEstoqueCadastrar(dados: {
   const unidade = normalizeText(dados.unidade);
   const qtd = Number(dados.quantidade);
   if (!sku || !unidade) throw new Error("SKU e unidade obrigatórios.");
-  if (normalizeUpper(unidade) === "GERAL") throw new Error("GERAL é só para UNIK.");
   if (isNaN(qtd) || qtd < 0) throw new Error("Quantidade inválida.");
   await recusarAlocacaoUnik3d(sku);
 
@@ -367,7 +495,6 @@ export async function adminEstoqueAjustarDelta(dados: {
   const unidade = normalizeText(dados.unidade);
   const delta = Number(dados.delta);
   if (!sku || !unidade) throw new Error("SKU e unidade obrigatórios.");
-  if (normalizeUpper(unidade) === "GERAL") throw new Error("GERAL é só para UNIK.");
   await recusarAlocacaoUnik3d(sku);
   const [item] = await db.select().from(itens).where(eq(itens.sku, sku));
   if (item?.ilimitado) throw new Error("Este item é ilimitado e não usa quantidade.");
@@ -384,13 +511,16 @@ export async function adminEstoqueDefinirQuantidade(dados: {
   const sku = normalizeText(dados.sku);
   const unidade = normalizeText(dados.unidade);
   const alvo = Number(dados.quantidade);
-  if (normalizeUpper(unidade) === "GERAL") throw new Error("GERAL é só para UNIK.");
   await recusarAlocacaoUnik3d(sku);
   const [linha] = await db
     .select()
     .from(estoque)
     .where(and(eq(estoque.sku, sku), eq(estoque.unidade, unidade)));
-  if (!linha) throw new Error("Linha de estoque não encontrada.");
+  if (!linha) {
+    // cria se não existir (inclui GERAL)
+    await adminEstoqueCadastrar({ sku, unidade, quantidade: alvo });
+    return { ok: true, message: "Quantidade definida.", quantidade: alvo };
+  }
   const delta = alvo - linha.quantidade;
   await movimento(sku, unidade, delta, "DEFINIR_QTD");
   await registrarLog(LOG_TIPO.ESTOQUE_DEFINIR, dados, true, "Quantidade definida");

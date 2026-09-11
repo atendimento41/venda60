@@ -56,6 +56,7 @@ export async function POST(req: Request) {
           senha_hash: string;
           paginas: string;
           unidades?: string;
+          vendedor_id?: string | null;
           ativo: boolean | number | string;
           sessao_ver: number;
         }
@@ -67,17 +68,19 @@ export async function POST(req: Request) {
 
     const paginas = parsePaginas(user.paginas);
     const unidades = parseUnidadesJson(user.unidades);
+    const vendedorId = String(user.vendedor_id || "").trim() || null;
     const token = await criarTokenSessao({
       id: Number(user.id),
       login: String(user.login),
       nome: String(user.nome),
       paginas,
       unidades,
+      vendedorId,
       sv: Number(user.sessao_ver) || 1,
     });
     const res = NextResponse.json({
       ok: true,
-      usuario: { nome: user.nome, login: user.login, unidades },
+      usuario: { nome: user.nome, login: user.login, unidades, vendedorId },
       next: primeiraPagina(paginas),
     });
     res.headers.set("Set-Cookie", cookieSessao(token));

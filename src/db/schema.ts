@@ -15,6 +15,8 @@ export const usuarios = pgTable("usuarios", {
   paginas: text("paginas").notNull().default("[]"),
   /** JSON array. Vazio [] = todas as unidades (legado). */
   unidades: text("unidades").notNull().default("[]"),
+  /** Vendedor vinculado (id em vendedores) — pré-preenche lançamento. */
+  vendedorId: text("vendedor_id"),
   ativo: boolean("ativo").notNull().default(true),
   sessaoVer: integer("sessao_ver").notNull().default(1),
   /** E-mail pessoal opcional (verificação SMTP). */

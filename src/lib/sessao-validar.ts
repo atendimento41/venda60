@@ -6,11 +6,11 @@ import { parsePaginas } from "./roles";
 export async function validarSessaoNoBanco(sessao: SessaoUsuario): Promise<SessaoUsuario | null> {
   await ensureUsuariosTable();
   const rs = await getClient().execute({
-    sql: "SELECT ativo, sessao_ver, paginas FROM usuarios WHERE id = ? LIMIT 1",
+    sql: "SELECT ativo, sessao_ver, paginas, vendedor_id FROM usuarios WHERE id = ? LIMIT 1",
     args: [sessao.id],
   });
   const row = rs.rows[0] as
-    | { ativo: boolean | number; sessao_ver: number; paginas: string }
+    | { ativo: boolean | number; sessao_ver: number; paginas: string; vendedor_id?: string | null }
     | undefined;
   if (!row) return null;
   const ativo = row.ativo === true || row.ativo === 1;
@@ -23,6 +23,7 @@ export async function validarSessaoNoBanco(sessao: SessaoUsuario): Promise<Sessa
   return {
     ...sessao,
     paginas: parsePaginas(row.paginas),
+    vendedorId: String(row.vendedor_id || "").trim() || null,
   };
 }
 

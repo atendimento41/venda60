@@ -19,6 +19,13 @@ export async function listarTodosItensCadastro() {
   const nomeUnikPorSku = Object.fromEntries(
     vinculos.map((v) => [v.sku, normalizeText(v.nomeOriginal) || v.nomeChave])
   );
+  const gerais = await db
+    .select({ sku: estoque.sku, quantidade: estoque.quantidade })
+    .from(estoque)
+    .where(eq(estoque.unidade, "GERAL"));
+  const geralPorSku = Object.fromEntries(
+    gerais.map((g) => [g.sku, Number(g.quantidade) || 0]),
+  );
   const rows = await db.select().from(itens).orderBy(itens.descricao);
   return rows.map((r) => ({
     sku: r.sku,
@@ -33,6 +40,7 @@ export async function listarTodosItensCadastro() {
     fotoUrl: r.fotoUrl || "",
     ilimitado: Boolean(r.ilimitado),
     unidades: parseUnidadesJson(r.unidades),
+    estoqueGeral: geralPorSku[r.sku] ?? 0,
   }));
 }
 
@@ -93,6 +101,10 @@ export async function salvarItemCadastro(dados: {
   ilimitado?: boolean;
   nomeUnik?: string;
   unidades?: string[];
+  /** Quantidade no depósito GERAL (UNIK ou estoque ainda não alocado). */
+  estoqueGeral?: number | null;
+  /** Alocar já nas lojas no momento do cadastro. */
+  alocacoes?: { unidade: string; quantidade: number }[];
   desativar?: boolean;
   excluir?: boolean;
 }) {
@@ -131,6 +143,8 @@ export async function salvarItemCadastro(dados: {
 
   const [existe] = await db.select().from(itens).where(eq(itens.sku, sku));
   const unidadesJson = serializarUnidades(dados.unidades ?? []);
+  const ilimitado =
+    dados.ilimitado === true || itemEstoqueIlimitado(categoriaDash, subcategoriaMeep);
   const payload = {
     sku,
     categoriaDash,
@@ -141,7 +155,7 @@ export async function salvarItemCadastro(dados: {
     custo: existe ? Number(existe.custo) || 0 : 0,
     sugestaoVenda: existe ? Number(existe.sugestaoVenda) || 0 : 0,
     fotoUrl,
-    ilimitado: dados.ilimitado === true || itemEstoqueIlimitado(categoriaDash, subcategoriaMeep),
+    ilimitado,
     unidades: unidadesJson,
   };
 
@@ -167,8 +181,19 @@ export async function salvarItemCadastro(dados: {
     }
   }
 
+  let msgEstoque = "";
+  if (!ilimitado) {
+    const { aplicarEstoqueNoCadastro } = await import("./estoque");
+    msgEstoque = await aplicarEstoqueNoCadastro({
+      sku,
+      descricao,
+      estoqueGeral: dados.estoqueGeral,
+      alocacoes: dados.alocacoes,
+    });
+  }
+
   await registrarLog(LOG_TIPO.CADASTRO_ITEM, { sku, nomeUnik: nomeUnik || null }, true, "Item salvo");
-  return { ok: true, message: "Item salvo." + msgVinculo, sku };
+  return { ok: true, message: "Item salvo." + msgVinculo + msgEstoque, sku };
 }
 
 export async function listarSkusItensAtivos() {
@@ -182,15 +207,29 @@ export async function listarSkusItensAtivos() {
 
 export async function getOpcoesAdminEstoque() {
   const { getOpcoesFiltrosEstoque } = await import("./estoque");
-  const { campoEhUnik3d } = await import("./unik");
+  const { campoEhUnik3d, UNIK_UNIDADE_GERAL } = await import("./unik");
   const pack = await getOpcoesFiltrosEstoque();
   const rows = await db.select().from(itens).where(eq(itens.ativo, true));
+  const estGeral = await db
+    .select({ sku: estoque.sku, quantidade: estoque.quantidade })
+    .from(estoque)
+    .where(eq(estoque.unidade, UNIK_UNIDADE_GERAL));
+  const geralPorSku = new Map(
+    estGeral.map((r) => [normalizeUpper(r.sku), Number(r.quantidade) || 0]),
+  );
   const itensAtivos = rows
     .filter((r) => !campoEhUnik3d(r.subcategoriaMeep) && !campoEhUnik3d(r.categoriaDash))
-    .map((r) => ({ sku: r.sku, descricao: r.descricao }))
+    .map((r) => ({
+      sku: r.sku,
+      descricao: r.descricao,
+      estoqueGeral: geralPorSku.get(normalizeUpper(r.sku)) ?? 0,
+      ilimitado: Boolean(r.ilimitado),
+    }))
     .sort((a, b) =>
       normalizeUpper(a.descricao).localeCompare(normalizeUpper(b.descricao), "pt-BR")
     );
-  const unidades = pack.unidades.filter((u) => normalizeUpper(u) !== "GERAL");
+  const lojas = pack.unidades.filter((u) => normalizeUpper(u) !== "GERAL");
+  // GERAL primeiro = depósito / estoque ainda não enviado às lojas
+  const unidades = [UNIK_UNIDADE_GERAL, ...lojas];
   return { ...pack, unidades, itens: itensAtivos };
 }

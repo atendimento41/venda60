@@ -47,6 +47,9 @@ export async function ensureUsuariosTable() {
   if (!colSet.has("email_token_expira")) {
     await client.execute("ALTER TABLE usuarios ADD COLUMN email_token_expira TIMESTAMPTZ");
   }
+  if (!colSet.has("vendedor_id")) {
+    await client.execute("ALTER TABLE usuarios ADD COLUMN vendedor_id TEXT");
+  }
   // UNIQUE parcial: vários NULL ok; e-mails preenchidos únicos
   await client.execute(`
     CREATE UNIQUE INDEX IF NOT EXISTS usuarios_email_unique
