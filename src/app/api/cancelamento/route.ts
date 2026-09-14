@@ -23,6 +23,8 @@ export async function GET(req: Request) {
       vendedor: searchParams.get("vendedor") || undefined,
       dataInicio: searchParams.get("dataInicio") || undefined,
       dataFim: searchParams.get("dataFim") || undefined,
+      categoria: searchParams.get("categoria") || undefined,
+      subcategoria: searchParams.get("subcategoria") || undefined,
       incluirCanceladas: searchParams.get("incluirCanceladas") === "true",
     };
     if (tipo === "prime") {

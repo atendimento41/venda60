@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import AppShell from "@/components/AppShell";
-import { formatMoeda, UNIDADES, asArray } from "@/lib/client";
+import { formatMoeda, hojeISO, UNIDADES, asArray } from "@/lib/client";
 
 type Linha = {
   sheetRow: number;
@@ -10,6 +10,8 @@ type Linha = {
   vendedor: string;
   unidade: string;
   item: string;
+  categoria?: string;
+  subcategoria?: string;
   quantidade: number;
   valorRecebido: number;
   cancelada: boolean;
@@ -21,8 +23,14 @@ type Tipo = "venda" | "prime";
 
 export default function CancelamentoPage() {
   const [tipo, setTipo] = useState<Tipo>("venda");
+  const [dataInicio, setDataInicio] = useState(hojeISO());
+  const [dataFim, setDataFim] = useState(hojeISO());
   const [unidade, setUnidade] = useState("");
   const [vendedor, setVendedor] = useState("");
+  const [categoria, setCategoria] = useState("");
+  const [subcategoria, setSubcategoria] = useState("");
+  const [vendedores, setVendedores] = useState<string[]>([]);
+  const [categorias, setCategorias] = useState<Record<string, string[]>>({});
   const [incluirCanceladas, setIncluirCanceladas] = useState(true);
   const [linhas, setLinhas] = useState<Linha[]>([]);
   const [msg, setMsg] = useState("");
@@ -31,18 +39,41 @@ export default function CancelamentoPage() {
   const [motivo, setMotivo] = useState("");
   const [salvando, setSalvando] = useState(false);
 
-  async function carregar(t: Tipo = tipo) {
+  useEffect(() => {
+    fetch("/api/relatorios?tipo=vendedores")
+      .then((r) => r.json())
+      .then((d) => setVendedores(asArray(d)));
+    fetch("/api/relatorios?tipo=categorias")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d && !d.error) setCategorias(d);
+      });
+  }, []);
+
+  async function carregar(opts?: {
+    tipo?: Tipo;
+    categoria?: string;
+    subcategoria?: string;
+  }) {
+    const t = opts?.tipo ?? tipo;
+    const cat = opts?.categoria !== undefined ? opts.categoria : categoria;
+    const sub = opts?.subcategoria !== undefined ? opts.subcategoria : subcategoria;
     const q = new URLSearchParams();
     q.set("tipo", t);
+    if (dataInicio) q.set("dataInicio", dataInicio);
+    if (dataFim) q.set("dataFim", dataFim);
     if (unidade) q.set("unidade", unidade);
     if (vendedor) q.set("vendedor", vendedor);
+    if (cat) q.set("categoria", cat);
+    if (sub) q.set("subcategoria", sub);
     if (incluirCanceladas) q.set("incluirCanceladas", "true");
     const d = await fetch(`/api/cancelamento?${q}`).then((r) => r.json());
     setLinhas(asArray(d));
   }
 
   useEffect(() => {
-    carregar();
+    void carregar();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function trocarTipo(t: Tipo) {
@@ -50,7 +81,11 @@ export default function CancelamentoPage() {
     setAlvo(null);
     setMsg("");
     setErro("");
-    carregar(t);
+    const cat = t === "prime" ? "PRIME" : categoria === "PRIME" ? "" : categoria;
+    const sub = t === "prime" || categoria === "PRIME" ? "" : subcategoria;
+    setCategoria(cat);
+    setSubcategoria(sub);
+    void carregar({ tipo: t, categoria: cat, subcategoria: sub });
   }
 
   function abrirCancelar(l: Linha) {
@@ -82,8 +117,13 @@ export default function CancelamentoPage() {
     setMsg(data.message);
     setAlvo(null);
     setMotivo("");
-    carregar();
+    void carregar();
   }
+
+  const subs =
+    categoria && categorias[categoria]
+      ? categorias[categoria]
+      : [...new Set(Object.values(categorias).flat())].sort();
 
   return (
     <AppShell title="Cancelar venda / PRIME">
@@ -109,6 +149,14 @@ export default function CancelamentoPage() {
       </div>
       <div className="filters">
         <div className="field">
+          <label>Início</label>
+          <input type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} />
+        </div>
+        <div className="field">
+          <label>Fim</label>
+          <input type="date" value={dataFim} onChange={(e) => setDataFim(e.target.value)} />
+        </div>
+        <div className="field">
           <label>Unidade</label>
           <select value={unidade} onChange={(e) => setUnidade(e.target.value)}>
             <option value="">Todas</option>
@@ -121,11 +169,44 @@ export default function CancelamentoPage() {
         </div>
         <div className="field">
           <label>Vendedor</label>
-          <input
-            value={vendedor}
-            onChange={(e) => setVendedor(e.target.value)}
-            placeholder="Nome exato"
-          />
+          <select value={vendedor} onChange={(e) => setVendedor(e.target.value)}>
+            <option value="">Todos</option>
+            {vendedores.map((v) => (
+              <option key={v} value={v}>
+                {v}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="field">
+          <label>Categoria</label>
+          <select
+            value={categoria}
+            onChange={(e) => {
+              setCategoria(e.target.value);
+              setSubcategoria("");
+            }}
+          >
+            <option value="">Todas</option>
+            {Object.keys(categorias)
+              .sort()
+              .map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+          </select>
+        </div>
+        <div className="field">
+          <label>Subcategoria</label>
+          <select value={subcategoria} onChange={(e) => setSubcategoria(e.target.value)}>
+            <option value="">Todas</option>
+            {subs.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
         </div>
         <label className="check-inline">
           <input
@@ -136,7 +217,7 @@ export default function CancelamentoPage() {
           Incluir canceladas
         </label>
       </div>
-      <button className="btn" onClick={() => carregar()}>
+      <button className="btn" onClick={() => void carregar()}>
         Buscar
       </button>
       {msg && <p className="msg-ok">{msg}</p>}
@@ -164,7 +245,7 @@ export default function CancelamentoPage() {
             <button
               className="btn"
               disabled={salvando || motivo.trim().length < 10}
-              onClick={confirmarCancelar}
+              onClick={() => void confirmarCancelar()}
             >
               {salvando ? "Cancelando…" : "Confirmar cancelamento"}
             </button>
@@ -182,6 +263,7 @@ export default function CancelamentoPage() {
             <th>Vendedor</th>
             <th>Unidade</th>
             <th>Item</th>
+            <th>Categoria</th>
             <th className="num">Qtd</th>
             <th className="num">Valor</th>
             <th>Motivo</th>
@@ -195,6 +277,10 @@ export default function CancelamentoPage() {
               <td>{l.vendedor}</td>
               <td>{l.unidade}</td>
               <td>{l.item}</td>
+              <td>
+                {l.categoria || "—"}
+                {l.subcategoria ? ` / ${l.subcategoria}` : ""}
+              </td>
               <td className="num">{l.quantidade}</td>
               <td className="num">R$ {formatMoeda(l.valorRecebido)}</td>
               <td>{l.cancelada ? l.motivo || "—" : ""}</td>

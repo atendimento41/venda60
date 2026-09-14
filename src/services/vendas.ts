@@ -426,10 +426,14 @@ export async function listarVendasParaCancelamento(filtros: {
   vendedor?: string;
   dataInicio?: string;
   dataFim?: string;
+  categoria?: string;
+  subcategoria?: string;
   incluirCanceladas?: boolean;
 }) {
   const rows = await db.select().from(vendas).orderBy(desc(vendas.id)).limit(2000);
   const somenteAbertas = !filtros.incluirCanceladas;
+  const catF = normalizeUpper(filtros.categoria || "");
+  const subF = normalizeUpper(filtros.subcategoria || "");
 
   return rows
     .filter((row) => {
@@ -441,6 +445,8 @@ export async function listarVendasParaCancelamento(filtros: {
       const ymd = dataYmd(row.data);
       if (filtros.dataInicio && ymd < filtros.dataInicio) return false;
       if (filtros.dataFim && ymd > filtros.dataFim) return false;
+      if (catF && normalizeUpper(row.categoria || "") !== catF) return false;
+      if (subF && normalizeUpper(row.subcategoria || "") !== subF) return false;
       if (filtros.nome) {
         const n = normalizeUpper(filtros.nome);
         const item = normalizeUpper(row.descricao || row.sku);
@@ -456,6 +462,8 @@ export async function listarVendasParaCancelamento(filtros: {
       unidade: row.unidade,
       sku: row.sku,
       item: row.descricao || row.sku,
+      categoria: row.categoria || "",
+      subcategoria: row.subcategoria || "",
       quantidade: row.quantidade,
       valorRecebido: row.valorRecebido,
       status: row.status || "",

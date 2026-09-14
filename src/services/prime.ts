@@ -152,11 +152,15 @@ export async function listarPrimeParaCancelamento(filtros: {
   vendedor?: string;
   dataInicio?: string;
   dataFim?: string;
+  categoria?: string;
+  subcategoria?: string;
   incluirCanceladas?: boolean;
 }) {
   await ensurePrimeSchema();
   const rows = await db.select().from(primeVendas).orderBy(desc(primeVendas.id)).limit(2000);
   const somenteAbertas = !filtros.incluirCanceladas;
+  const catF = normalizeUpper(filtros.categoria || "");
+  const subF = normalizeUpper(filtros.subcategoria || "");
 
   return rows
     .filter((row) => {
@@ -168,6 +172,9 @@ export async function listarPrimeParaCancelamento(filtros: {
       const ymd = dataYmd(row.data);
       if (filtros.dataInicio && ymd < filtros.dataInicio) return false;
       if (filtros.dataFim && ymd > filtros.dataFim) return false;
+      // PRIME: categoria só faz sentido como "PRIME"; subcategoria = nível
+      if (catF && catF !== "PRIME") return false;
+      if (subF && normalizeUpper(row.nivel || "") !== subF) return false;
       if (filtros.nome) {
         const n = normalizeUpper(filtros.nome);
         if (!normalizeUpper(row.item).includes(n)) return false;
@@ -182,6 +189,8 @@ export async function listarPrimeParaCancelamento(filtros: {
       unidade: row.unidade || "",
       sku: "",
       item: row.item,
+      categoria: "PRIME",
+      subcategoria: row.nivel || "",
       quantidade: row.quantidade,
       valorRecebido: row.valor,
       status: row.status || "",
