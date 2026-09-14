@@ -37,6 +37,11 @@ export default function RelatorioDetalhadoPage() {
     if (d && !d.error) setVendas(asArray<VendaPeriodo>(d.vendas));
   }
 
+  const subs =
+    categoria && categorias[categoria]
+      ? categorias[categoria]
+      : [...new Set(Object.values(categorias).flat())].sort();
+
   return (
     <AppShell title="Relatório Detalhado">
       <div className="filters">
@@ -71,21 +76,29 @@ export default function RelatorioDetalhadoPage() {
           </select>
         </div>
         <div className="field">
-          <label>Categoria (col F)</label>
-          <select value={categoria} onChange={(e) => setCategoria(e.target.value)}>
+          <label>Categoria</label>
+          <select
+            value={categoria}
+            onChange={(e) => {
+              setCategoria(e.target.value);
+              setSubcategoria("");
+            }}
+          >
             <option value="">Todas</option>
-            {Object.keys(categorias).map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
+            {Object.keys(categorias)
+              .sort()
+              .map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
           </select>
         </div>
         <div className="field">
-          <label>Subcategoria (col E)</label>
+          <label>Subcategoria</label>
           <select value={subcategoria} onChange={(e) => setSubcategoria(e.target.value)}>
             <option value="">Todas</option>
-            {(categorias[categoria] || Object.values(categorias).flat()).map((s) => (
+            {subs.map((s) => (
               <option key={s} value={s}>
                 {s}
               </option>

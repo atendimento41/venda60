@@ -6,7 +6,7 @@ import {
   lerCookieOAuthState,
   trocarCodePorPerfilGoogle,
 } from "@/lib/google-oauth";
-import { parsePaginas, primeiraPagina } from "@/lib/roles";
+import { parsePaginas, paginasVendas, primeiraPagina, temAcessoVendas } from "@/lib/roles";
 import { cookieSessao, criarTokenSessao } from "@/lib/session";
 import { parseUnidadesJson } from "@/services/vendedores";
 
@@ -84,7 +84,10 @@ export async function GET(req: Request) {
       });
     }
 
-    const paginas = parsePaginas(user.paginas);
+    const paginas = paginasVendas(parsePaginas(user.paginas));
+    if (!temAcessoVendas(paginas)) {
+      return redirectLoginErro(req, "Usuário sem permissão no módulo Vendas.");
+    }
     const unidades = parseUnidadesJson(user.unidades);
     const vendedorId = String((user as { vendedor_id?: string }).vendedor_id || "").trim() || null;
     const token = await criarTokenSessao({
@@ -98,7 +101,12 @@ export async function GET(req: Request) {
     });
 
     let next = saved.next || primeiraPagina(paginas);
-    if (!next.startsWith("/") || next.startsWith("//")) next = primeiraPagina(paginas);
+    if (!next.startsWith("/") || next.startsWith("//") || next === "/login") {
+      next = primeiraPagina(paginas);
+    }
+    if (!temAcessoVendas(paginas) || next === "/login") {
+      return redirectLoginErro(req, "Usuário sem permissão no módulo Vendas.");
+    }
 
     const res = NextResponse.redirect(new URL(next, req.url));
     res.headers.append("Set-Cookie", cookieOAuthStateClear());

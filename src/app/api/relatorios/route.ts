@@ -42,7 +42,10 @@ export async function GET(req: Request) {
       return NextResponse.json(
         await getVendasDoDia({
           data: searchParams.get("data") || undefined,
+          dataInicio: searchParams.get("dataInicio") || undefined,
+          dataFim: searchParams.get("dataFim") || undefined,
           unidade: searchParams.get("unidade") || undefined,
+          vendedor: searchParams.get("vendedor") || undefined,
           categoria: searchParams.get("categoria") || undefined,
           subcategoria: searchParams.get("subcategoria") || undefined,
         })

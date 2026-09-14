@@ -121,6 +121,14 @@ export function parsePaginas(raw: unknown): PaginasPerm {
   return [];
 }
 
+/** Extrai só perms de vendas (hrefs sem prefixo de outros módulos). */
+export function paginasVendas(paginas: PaginasPerm): PaginasPerm {
+  if (paginas === "*") return "*";
+  return paginas.filter(
+    (p) => !p.startsWith("omie:") && !p.startsWith("fin:") && !p.startsWith("hub:")
+  );
+}
+
 export function temTodasPaginas(paginas: PaginasPerm): boolean {
   return paginas === "*";
 }
@@ -152,8 +160,12 @@ export function linksPermitidos(paginas: PaginasPerm) {
 }
 
 export function primeiraPagina(paginas: PaginasPerm): string {
-  const links = linksPermitidos(paginas);
+  const links = linksPermitidos(paginasVendas(paginas));
   return links[0]?.href || "/login";
+}
+
+export function temAcessoVendas(paginas: PaginasPerm): boolean {
+  return primeiraPagina(paginas) !== "/login";
 }
 
 export function podeAcessarPagina(paginas: PaginasPerm, path: string): boolean {

@@ -1,15 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookieSessao, criarTokenSessao } from "@/lib/session";
-import { primeiraPagina, type PaginasPerm } from "@/lib/roles";
+import { paginasVendas, primeiraPagina, temAcessoVendas } from "@/lib/roles";
 import { lerSsoToken } from "@/lib/sso";
-
-/** Extrai só perms de vendas (hrefs sem prefixo de outros módulos). */
-function paginasVendas(paginas: PaginasPerm): PaginasPerm {
-  if (paginas === "*") return "*";
-  return paginas.filter(
-    (p) => !p.startsWith("omie:") && !p.startsWith("fin:") && !p.startsWith("hub:")
-  );
-}
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
@@ -20,7 +12,7 @@ export async function GET(req: Request) {
   }
 
   const paginas = paginasVendas(payload.paginas);
-  if (paginas !== "*" && paginas.length === 0) {
+  if (!temAcessoVendas(paginas)) {
     return NextResponse.redirect(new URL("/login?erro=perm", req.url));
   }
 

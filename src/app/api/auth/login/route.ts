@@ -5,7 +5,7 @@ import { verificarSenha } from "@/lib/password";
 import { ipDoRequest, verificarRateLimit } from "@/lib/rate-limit";
 import { cookieSessao, criarTokenSessao } from "@/lib/session";
 import { ensureUsuariosTable } from "@/lib/ensure-usuarios";
-import { parsePaginas, primeiraPagina } from "@/lib/roles";
+import { parsePaginas, paginasVendas, primeiraPagina, temAcessoVendas } from "@/lib/roles";
 import { parseUnidadesJson } from "@/services/vendedores";
 
 function usuarioAtivo(ativo: unknown): boolean {
@@ -66,7 +66,13 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Usuário ou senha inválidos." }, { status: 401 });
     }
 
-    const paginas = parsePaginas(user.paginas);
+    const paginas = paginasVendas(parsePaginas(user.paginas));
+    if (!temAcessoVendas(paginas)) {
+      return NextResponse.json(
+        { error: "Usuário sem permissão no módulo Vendas." },
+        { status: 403 }
+      );
+    }
     const unidades = parseUnidadesJson(user.unidades);
     const vendedorId = String(user.vendedor_id || "").trim() || null;
     const token = await criarTokenSessao({

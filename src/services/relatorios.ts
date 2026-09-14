@@ -19,7 +19,6 @@ import {
 } from "@/lib/utils";
 import { LOG_TIPO, registrarLogConsulta } from "@/lib/log";
 import {
-  listarVendasDoDiaSql,
   listarVendasIntervalo,
   listarVendasNoPeriodo,
 } from "@/lib/vendas-db";
@@ -215,6 +214,11 @@ export async function getRelatorioFiltrado(filtros: {
         return false;
       if (filtros.vendedor && normalizeText(row.vendedor) !== normalizeText(filtros.vendedor))
         return false;
+      if (
+        filtros.subcategoria &&
+        normalizeUpper(row.nivel || "") !== normalizeUpper(filtros.subcategoria)
+      )
+        return false;
       return true;
     });
     const porVendedor: Record<string, { vendedor: string; qtd: number; valorPrime: number; comissaoPrime: number }> = {};
@@ -225,8 +229,23 @@ export async function getRelatorioFiltrado(filtros: {
       porVendedor[v].valorPrime += row.valor;
       porVendedor[v].comissaoPrime += row.quantidade;
     }
+    const vendasLinhas = filtradasPrime
+      .slice()
+      .sort((a, b) => String(b.data).localeCompare(String(a.data)))
+      .map((row) => ({
+        dataHora: formatDataHoraBR(row.data),
+        vendedor: row.vendedor || "—",
+        unidade: row.unidade || "",
+        item: row.item || row.nivel || "PRIME",
+        sku: "",
+        quantidade: row.quantidade,
+        valor: row.valor,
+        categoria: CATEGORIA_PRIME,
+        subcategoria: row.nivel || "",
+      }));
     return {
       linhas: Object.values(porVendedor),
+      vendas: vendasLinhas,
       totalValorPrime: filtradasPrime.reduce((s, r) => s + r.valor, 0),
       modo: "PRIME",
     };
@@ -241,9 +260,13 @@ export async function getRelatorioFiltrado(filtros: {
   const filtradas = rows.filter((row) => {
     if (filtros.vendedor && normalizeText(row.vendedor) !== normalizeText(filtros.vendedor))
       return false;
-    if (filtros.categoria && normalizeUpper(row.subcategoria) !== normalizeUpper(filtros.categoria))
+    // categoria = categoria_dash (vendas.categoria); subcategoria = subcategoria_meep
+    if (filtros.categoria && normalizeUpper(row.categoria) !== normalizeUpper(filtros.categoria))
       return false;
-    if (filtros.subcategoria && normalizeUpper(row.categoria) !== normalizeUpper(filtros.subcategoria))
+    if (
+      filtros.subcategoria &&
+      normalizeUpper(row.subcategoria) !== normalizeUpper(filtros.subcategoria)
+    )
       return false;
     return true;
   });
@@ -313,27 +336,24 @@ export async function getRelatorioFiltrado(filtros: {
 
 export async function getVendasDoDia(filtros: {
   data?: string;
+  dataInicio?: string;
+  dataFim?: string;
   unidade?: string;
+  vendedor?: string;
   categoria?: string;
   subcategoria?: string;
 }) {
-  const dataF = filtros.data || hojeISO();
-  const rows = await listarVendasDoDiaSql({
-    data: dataF,
+  const dataInicio = filtros.dataInicio || filtros.data || hojeISO();
+  const dataFim = filtros.dataFim || filtros.data || dataInicio;
+  const result = await getRelatorioFiltrado({
+    dataInicio,
+    dataFim,
     unidade: filtros.unidade,
+    vendedor: filtros.vendedor,
     categoria: filtros.categoria,
     subcategoria: filtros.subcategoria,
   });
-
-  return rows.map((row) => ({
-      dataHora: formatDataHoraBR(row.data),
-      vendedor: row.vendedor || "—",
-      unidade: row.unidade,
-      item: row.descricao || row.sku,
-      categoria: row.categoria || row.subcategoria || "",
-      quantidade: row.quantidade,
-      valor: row.valorRecebido,
-    }));
+  return result.vendas || [];
 }
 
 export async function listarCategoriasRelatorio() {
