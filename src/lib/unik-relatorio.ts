@@ -6,6 +6,7 @@ export const FORMULA_RELATORIO_VENDAS_UNIK = [
   "Custo UNIK = cadastro do item (unitário).",
   "Receber UNIK = ((valor venda − custo 60 − custo UNIK) ÷ 2 + custo UNIK) × quantidade.",
   "Receber 60 = ((valor venda − custo 60 − custo UNIK) ÷ 2 + custo 60) × quantidade.",
+  "Receber UNIK + Receber 60 = total vendido. Encomendas não entram neste relatório.",
 ] as const;
 
 export function textoFormulaRelatorioVendasUnik(): string {

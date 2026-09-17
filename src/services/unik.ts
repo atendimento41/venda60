@@ -1472,11 +1472,14 @@ export async function getUnikRelatorioVendas(filtros: {
 }) {
   const mes = filtros.mes || mesAtualISO();
   const { inicio, fim, rotulo } = parseMesFiltro(mes);
-  const linhas = await listarVendasUnik60Store({
+  const todas = await listarVendasUnik60Store({
     inicio,
     fim,
     unidade: filtros.unidade,
   });
+  // Encomendas têm tela própria (/unik-encomendas). Aqui só vendas:
+  // Receber UNIK + Receber 60 = total vendido.
+  const { vendas: linhas } = partirVendasEncomenda(todas);
   const totais = somarTotaisUnik(linhas);
 
   registrarLogConsulta(LOG_TIPO.CONSULTA_UNIK, { mes, ...filtros }, "Relatorio vendas UNIK 3D");
