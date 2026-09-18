@@ -708,25 +708,34 @@ async function aplicarEstoqueLinha(
     .where(eq(entregaUnik.id, row.id));
 }
 
+/**
+ * Sincroniza fotos entre item do estoque e lançamentos UNIK do SKU.
+ * Nunca substitui foto existente: só preenche o lado que estiver sem foto.
+ */
 async function sincronizarFotosItemUnik(sku: string, fotoNova = "") {
   const skuLimpo = normalizeText(sku);
   if (!skuLimpo) return;
   const [item] = await db.select().from(itens).where(eq(itens.sku, skuLimpo));
   if (!item) return;
+
   const entregas = await db.select().from(entregaUnik);
   const doSku = entregas.filter((r) => normalizeUpper(r.sku) === normalizeUpper(skuLimpo));
-  const fotoDeEntrega =
+
+  const fotoItemAtual = normalizeText(item.fotoUrl);
+  const fotoDeUnik =
     validarFotoUrl(fotoNova) || doSku.map((r) => normalizeText(r.fotoUrl)).find(Boolean) || "";
-  const fotoItem = normalizeText(item.fotoUrl);
-  const fotoFinal = fotoItem || fotoDeEntrega;
-  if (!fotoFinal) return;
-  if (!fotoItem) {
-    await db.update(itens).set({ fotoUrl: fotoFinal }).where(eq(itens.sku, skuLimpo));
+
+  // Item sem foto → pode receber a da UNIK (ou a candidata).
+  if (!fotoItemAtual && fotoDeUnik) {
+    await db.update(itens).set({ fotoUrl: fotoDeUnik }).where(eq(itens.sku, skuLimpo));
   }
+
+  // Lançamentos UNIK sem foto → podem receber a do item (ou a candidata).
+  const fotoParaPreencher = fotoItemAtual || fotoDeUnik;
+  if (!fotoParaPreencher) return;
   for (const row of doSku) {
-    if (!normalizeText(row.fotoUrl)) {
-      await db.update(entregaUnik).set({ fotoUrl: fotoFinal }).where(eq(entregaUnik.id, row.id));
-    }
+    if (normalizeText(row.fotoUrl)) continue;
+    await db.update(entregaUnik).set({ fotoUrl: fotoParaPreencher }).where(eq(entregaUnik.id, row.id));
   }
 }
 
@@ -738,13 +747,16 @@ export async function salvarFotoUnikSku(sku: string, fotoUrl: string) {
   if (!foto) throw new Error("Selecione uma foto.");
   const [item] = await db.select().from(itens).where(eq(itens.sku, skuLimpo));
   if (!item) throw new Error("Item do estoque não encontrado.");
+  // Anexar/Trocar no cadastro/item: atualiza a foto do item.
   await db.update(itens).set({ fotoUrl: foto }).where(eq(itens.sku, skuLimpo));
   const entregas = await db.select().from(entregaUnik);
   for (const row of entregas) {
     if (normalizeUpper(row.sku) !== normalizeUpper(skuLimpo)) continue;
+    // Não substitui foto já existente no lançamento UNIK.
+    if (normalizeText(row.fotoUrl)) continue;
     await db.update(entregaUnik).set({ fotoUrl: foto }).where(eq(entregaUnik.id, row.id));
   }
-  return { ok: true, message: "Foto anexada no item e nas entregas UNIK deste SKU." };
+  return { ok: true, message: "Foto do item salva. Lançamentos UNIK sem foto foram preenchidos." };
 }
 
 export async function registrarEntregaUnik(dados: {
@@ -932,7 +944,7 @@ export async function vincularNomeUnik(
   const entregas = await db.select().from(entregaUnik);
   let aplicadas = 0;
   let estoqueNovo = 0;
-  let fotoNova = normalizeText(item.fotoUrl);
+  let fotoNova = "";
   for (const row of entregas) {
     if (chaveNomeItem(row.nome) !== chave) continue;
     await reverterEstoqueLinha(row);
@@ -955,8 +967,11 @@ export async function vincularNomeUnik(
     );
     aplicadas++;
     estoqueNovo++;
+    // Preferir foto já existente no lançamento UNIK para preencher item só se ele estiver sem.
     if (!fotoNova) fotoNova = normalizeText(row.fotoUrl);
   }
+  // Se UNIK não tiver foto, candidata = foto do item (só preenche lados vazios).
+  if (!fotoNova) fotoNova = normalizeText(item.fotoUrl);
   await sincronizarFotosItemUnik(item.sku, fotoNova);
 
   await sincronizarCustoSugestaoItemPorSku(item.sku);
