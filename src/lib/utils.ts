@@ -1,4 +1,4 @@
-export const APP_BUILD = "2026.09.18-unik-edicao-lote";
+export const APP_BUILD = "2026.09.18-parse-ponto";
 export const UNIDADES_PADRAO = ["PKS", "SSU", "PIER 21", "TGS"] as const;
 export const LOG_RETENTION_DAYS = 30;
 
@@ -26,7 +26,29 @@ export function parsePreco(valor: unknown): number {
     .replace(/\$/g, "")
     .replace(/\s/g, "")
     .replace(/[^\d,.-]/g, "");
-  s = s.replace(/\./g, "").replace(/,/g, ".");
+  if (!s || s === "-" || s === "." || s === ",") return 0;
+
+  const temVirgula = s.includes(",");
+  const temPonto = s.includes(".");
+
+  if (temVirgula && temPonto) {
+    // BR: 1.234,56 → milhar + decimal
+    s = s.replace(/\./g, "").replace(",", ".");
+  } else if (temVirgula) {
+    // 12,50 → decimal
+    s = s.replace(",", ".");
+  } else if (temPonto) {
+    const parts = s.split(".");
+    if (parts.length > 2) {
+      // 1.234.567 → só milhares
+      s = s.replace(/\./g, "");
+    } else if (parts.length === 2 && parts[1].length === 3 && parts[0].replace(/^-/, "").length <= 3) {
+      // 1.234 ambíguo no BR → milhar
+      s = s.replace(/\./g, "");
+    }
+    // senão: 12.5 / 12.50 → ponto = vírgula decimal (parseFloat já entende)
+  }
+
   const num = parseFloat(s);
   return isNaN(num) ? 0 : num;
 }
