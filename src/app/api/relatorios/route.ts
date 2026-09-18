@@ -14,8 +14,9 @@ import { mensagemErroApi } from "@/lib/api-error";
 
 export async function GET(req: Request) {
   try {
-    const { ensureVendasSchema } = await import("@/lib/ensure-schema");
+    const { ensurePrimeSchema, ensureVendasSchema } = await import("@/lib/ensure-schema");
     await ensureVendasSchema();
+    await ensurePrimeSchema();
     const { searchParams } = new URL(req.url);
     const tipo = searchParams.get("tipo") || "index";
 
