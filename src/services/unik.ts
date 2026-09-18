@@ -310,6 +310,7 @@ function lancamentoDeRow(
     dataFmt: formatDataHoraBR(row.data || ""),
     status: normalizeText(row.status),
     tipo: normalizeText(row.tipo),
+    encomenda: cls === "ENCOMENDA",
     unidade: normalizeText(row.unidade),
     nomeEntrega: nome,
     sku: item?.sku || "",
@@ -400,6 +401,8 @@ export async function atualizarLancamentoUnik(dados: {
   recebidoPor?: string;
   fotoUrl?: string;
   quantidade?: number | string;
+  /** true = marcar como encomenda; false = tirar encomenda (volta Entregue, sem estoque até re-vincular) */
+  encomenda?: boolean;
 }) {
   await ensureUnikSchema();
   const id = Number(dados.id);
@@ -407,12 +410,21 @@ export async function atualizarLancamentoUnik(dados: {
   const [row] = await db.select().from(entregaUnik).where(eq(entregaUnik.id, id));
   if (!row) throw new Error("Lançamento não encontrado.");
 
+  const ctx = await contextoUnik();
+  const skuAtual = normalizeText(row.sku) || ctx.skuPorChave[chaveNomeItem(row.nome)] || "";
+  const eraEncomenda = classificarStatusUnik(row.status, row.tipo) === "ENCOMENDA";
+  const querEncomenda = dados.encomenda !== undefined ? Boolean(dados.encomenda) : eraEncomenda;
+
   const temCusto =
     dados.custo !== undefined && dados.custo !== null && String(dados.custo).trim() !== "";
   const temSugestao =
-    dados.sugestaoVenda !== undefined && dados.sugestaoVenda !== null && String(dados.sugestaoVenda).trim() !== "";
+    dados.sugestaoVenda !== undefined &&
+    dados.sugestaoVenda !== null &&
+    String(dados.sugestaoVenda).trim() !== "";
   const temQuantidade =
-    dados.quantidade !== undefined && dados.quantidade !== null && String(dados.quantidade).trim() !== "";
+    dados.quantidade !== undefined &&
+    dados.quantidade !== null &&
+    String(dados.quantidade).trim() !== "";
   const custo = temCusto ? parsePreco(dados.custo) : Number(row.custo) || 0;
   const sugestaoVenda = temSugestao ? parsePreco(dados.sugestaoVenda) : Number(row.sugestaoVenda) || 0;
   const qtdAntiga = Number(row.quantidade) || 0;
@@ -422,17 +434,6 @@ export async function atualizarLancamentoUnik(dados: {
   }
   const recebidoPor =
     dados.recebidoPor !== undefined ? normalizeText(dados.recebidoPor) : normalizeText(row.recebidoPor);
-  const patch: {
-    custo: number;
-    sugestaoVenda: number;
-    recebidoPor: string;
-    quantidade: number;
-    fotoUrl?: string;
-  } = { custo, sugestaoVenda, recebidoPor, quantidade };
-  if (dados.fotoUrl !== undefined) {
-    const foto = normalizeText(dados.fotoUrl);
-    patch.fotoUrl = foto ? validarFotoUrl(foto) : "";
-  }
 
   if (temQuantidade && quantidade < qtdAntiga) {
     throw new Error(
@@ -440,23 +441,95 @@ export async function atualizarLancamentoUnik(dados: {
     );
   }
 
+  // Marcar como encomenda: sem item, sem estoque (igual Vincular).
+  if (querEncomenda && !eraEncomenda) {
+    await reverterEstoqueLinha(row);
+    const patchEnc: Record<string, unknown> = {
+      custo,
+      sugestaoVenda,
+      recebidoPor,
+      quantidade,
+      sku: "",
+      status: "Encomenda",
+      tipo: "Encomenda",
+      estoqueAplicado: false,
+    };
+    if (dados.fotoUrl !== undefined) {
+      const foto = normalizeText(dados.fotoUrl);
+      patchEnc.fotoUrl = foto ? validarFotoUrl(foto) : "";
+    }
+    await db.update(entregaUnik).set(patchEnc).where(eq(entregaUnik.id, id));
+    await registrarLog(
+      LOG_TIPO.LANCAMENTO_UNIK,
+      { id, custo, sugestaoVenda, recebidoPor, quantidade, encomenda: true },
+      true,
+      `Edição lançamento UNIK #${id} → encomenda`
+    );
+    return {
+      ok: true,
+      message:
+        custo > 0
+          ? `Lançamento marcado como encomenda (custo total R$ ${custo.toFixed(2)}). Estoque não muda.`
+          : "Lançamento marcado como encomenda (sem custo). Estoque não muda.",
+    };
+  }
+
+  // Tirar encomenda: volta Entregue; SKU fica vazio até re-vincular (não aplica estoque sozinho).
+  if (!querEncomenda && eraEncomenda) {
+    const patchDes: Record<string, unknown> = {
+      custo,
+      sugestaoVenda,
+      recebidoPor,
+      quantidade,
+      status: "Entregue",
+      tipo: "Entregue",
+      sku: "",
+      estoqueAplicado: false,
+    };
+    if (dados.fotoUrl !== undefined) {
+      const foto = normalizeText(dados.fotoUrl);
+      patchDes.fotoUrl = foto ? validarFotoUrl(foto) : "";
+    }
+    await db.update(entregaUnik).set(patchDes).where(eq(entregaUnik.id, id));
+    await registrarLog(
+      LOG_TIPO.LANCAMENTO_UNIK,
+      { id, custo, sugestaoVenda, recebidoPor, quantidade, encomenda: false },
+      true,
+      `Edição lançamento UNIK #${id} · removeu encomenda`
+    );
+    return {
+      ok: true,
+      message: "Encomenda removida (status Entregue). Vincule um item do estoque se precisar baixar estoque.",
+    };
+  }
+
+  const patch: {
+    custo: number;
+    sugestaoVenda: number;
+    recebidoPor: string;
+    quantidade: number;
+    fotoUrl?: string;
+    status?: string;
+    tipo?: string;
+  } = { custo, sugestaoVenda, recebidoPor, quantidade };
+  if (dados.fotoUrl !== undefined) {
+    const foto = normalizeText(dados.fotoUrl);
+    patch.fotoUrl = foto ? validarFotoUrl(foto) : "";
+  }
+  if (querEncomenda) {
+    patch.status = "Encomenda";
+    patch.tipo = "Encomenda";
+  }
+
   if (temQuantidade && quantidade > qtdAntiga && row.estoqueAplicado) {
-    if (sku) {
-      const [item] = await db.select().from(itens).where(eq(itens.sku, sku));
+    if (skuAtual && !querEncomenda) {
+      const [item] = await db.select().from(itens).where(eq(itens.sku, skuAtual));
       if (item && !item.ilimitado) {
         const excesso = quantidade - qtdAntiga;
         const cls = classificarStatusUnik(row.status, row.tipo);
-        if (cls === "ENCOMENDA") {
-          /* encomenda não movimenta estoque */
-        } else if (excesso > 0) {
+        if (excesso > 0) {
           const deltaExcesso = cls === "RETIRADA" ? -excesso : excesso;
-          await aplicarMovimentoEstoque(
-            sku,
-            UNIK_UNIDADE_GERAL,
-            deltaExcesso,
-            "UNIK_AJUSTE",
-            sku
-          );
+          await aplicarMovimentoEstoque(skuAtual, UNIK_UNIDADE_GERAL, deltaExcesso, "UNIK_AJUSTE", skuAtual);
         }
       }
     }
@@ -464,23 +537,21 @@ export async function atualizarLancamentoUnik(dados: {
 
   await db.update(entregaUnik).set(patch).where(eq(entregaUnik.id, id));
 
-  const ctx = await contextoUnik();
-  const sku = normalizeText(row.sku) || ctx.skuPorChave[chaveNomeItem(row.nome)] || "";
-  if (sku && (temSugestao || temCusto)) {
-    await sincronizarCustoSugestaoItemPorSku(sku);
+  if (skuAtual && !querEncomenda && (temSugestao || temCusto)) {
+    await sincronizarCustoSugestaoItemPorSku(skuAtual);
   }
-  if (sku && patch.fotoUrl) {
-    await sincronizarFotosItemUnik(sku, patch.fotoUrl);
+  if (skuAtual && !querEncomenda && patch.fotoUrl) {
+    await sincronizarFotosItemUnik(skuAtual, patch.fotoUrl);
   }
 
   await registrarLog(
     LOG_TIPO.LANCAMENTO_UNIK,
-    { id, custo, sugestaoVenda, recebidoPor, quantidade, sku },
+    { id, custo, sugestaoVenda, recebidoPor, quantidade, sku: querEncomenda ? "" : skuAtual, encomenda: querEncomenda },
     true,
     `Edição lançamento UNIK #${id}`
   );
 
-  return { ok: true, message: "Lançamento salvo." };
+  return { ok: true, message: querEncomenda ? "Encomenda salva." : "Lançamento salvo." };
 }
 
 export async function excluirLancamentoUnik(idBruto: number) {

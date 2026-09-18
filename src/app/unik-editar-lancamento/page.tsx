@@ -9,6 +9,7 @@ type Mov = {
   dataFmt: string;
   status: string;
   tipo: string;
+  encomenda?: boolean;
   unidade: string;
   nomeEntrega: string;
   descricaoItem: string;
@@ -25,6 +26,12 @@ function moneyInput(n: number | undefined) {
   return v ? formatMoeda(v) : "";
 }
 
+function ehEncomenda(m: Mov) {
+  if (typeof m.encomenda === "boolean") return m.encomenda;
+  const t = `${m.status || ""} ${m.tipo || ""}`.toUpperCase();
+  return t.includes("ENCOMENDA");
+}
+
 export default function EditarLancamentoUnikPage() {
   const [lista, setLista] = useState<Mov[]>([]);
   const [erro, setErro] = useState("");
@@ -34,7 +41,14 @@ export default function EditarLancamentoUnikPage() {
   const [filtroCusto, setFiltroCusto] = useState("");
   const [filtroSugestao, setFiltroSugestao] = useState("");
   const [editId, setEditId] = useState(0);
-  const [form, setForm] = useState({ custo: "", sugestao: "", recebidoPor: "", fotoUrl: "", quantidade: "1" });
+  const [form, setForm] = useState({
+    custo: "",
+    sugestao: "",
+    recebidoPor: "",
+    fotoUrl: "",
+    quantidade: "1",
+    encomenda: false,
+  });
   const [salvando, setSalvando] = useState("");
 
   async function carregar(custoF = filtroCusto, sugestaoF = filtroSugestao, nomeF = busca, itemF = buscaItem) {
@@ -63,6 +77,7 @@ export default function EditarLancamentoUnikPage() {
       recebidoPor: m.recebidoPor || "",
       fotoUrl: m.fotoLancamento || m.fotoUrl || "",
       quantidade: String(m.quantidade || 1),
+      encomenda: ehEncomenda(m),
     });
     setErro("");
     setMsg("");
@@ -96,6 +111,7 @@ export default function EditarLancamentoUnikPage() {
         recebidoPor: form.recebidoPor,
         fotoUrl: form.fotoUrl,
         quantidade: form.quantidade,
+        encomenda: form.encomenda,
       }),
     });
     const dataRes = await res.json();
@@ -135,9 +151,9 @@ export default function EditarLancamentoUnikPage() {
   return (
     <AppShell title="UNIK · Edição lançamento">
       <p className="muted">
-        Altere quantidade, quem recebeu, custo UNIK, sugestão de preço e foto, ou exclua o lançamento. Ao aumentar a
-        quantidade, o excedente entra só no estoque GERAL (não alocado). Não é permitido diminuir — regularize o
-        estoque antes.
+        Altere quantidade, quem recebeu, custo, sugestão, foto ou marque como <strong>encomenda</strong>. Encomenda
+        não mexe no estoque (custo = total 60→UNIK). Ao aumentar quantidade em lançamento normal, o excedente entra
+        só no estoque GERAL. Não é permitido diminuir.
       </p>
 
       <div className="filters">
@@ -204,12 +220,21 @@ export default function EditarLancamentoUnikPage() {
       ) : (
         lista.map((m) => {
           const aberto = editId === m.id;
+          const enc = ehEncomenda(m);
           return (
             <section key={m.id} className="dash-card" style={{ marginBottom: 12 }}>
               <div className="btn-row" style={{ alignItems: "flex-start" }}>
                 {m.fotoUrl ? <img className="foto-thumb" src={m.fotoUrl} alt="" /> : null}
                 <div style={{ flex: 1 }}>
-                  <h2 style={{ margin: 0 }}>{m.nomeEntrega}</h2>
+                  <h2 style={{ margin: 0 }}>
+                    {m.nomeEntrega}
+                    {enc ? (
+                      <span className="muted" style={{ fontSize: 13, fontWeight: 500 }}>
+                        {" "}
+                        · encomenda
+                      </span>
+                    ) : null}
+                  </h2>
                   <p className="muted" style={{ margin: "6px 0 0" }}>
                     {m.dataFmt} · {m.unidade || "—"} · {m.status || m.tipo} · Qtd {m.quantidade}
                     {m.descricaoItem ? ` · ${m.descricaoItem}` : ""}
@@ -249,13 +274,18 @@ export default function EditarLancamentoUnikPage() {
                       />
                     </div>
                     <div className="field">
-                      <label>Custo UNIK</label>
+                      <label>{form.encomenda ? "Custo total (60 → UNIK)" : "Custo UNIK"}</label>
                       <input
                         value={form.custo}
                         onChange={(e) => setForm((f) => ({ ...f, custo: e.target.value }))}
                         inputMode="decimal"
                         placeholder="0,00"
                       />
+                      {form.encomenda ? (
+                        <span className="muted" style={{ fontSize: 12 }}>
+                          Opcional. Encomenda não mexe no estoque; valor entra no relatório de encomendas.
+                        </span>
+                      ) : null}
                     </div>
                     <div className="field">
                       <label>Sugestão de preço</label>
@@ -266,7 +296,23 @@ export default function EditarLancamentoUnikPage() {
                         placeholder="0,00"
                       />
                     </div>
+                    <div className="field" style={{ justifyContent: "flex-end" }}>
+                      <label className="check-inline" style={{ marginTop: 22 }}>
+                        <input
+                          type="checkbox"
+                          checked={form.encomenda}
+                          onChange={(e) => setForm((f) => ({ ...f, encomenda: e.target.checked }))}
+                        />{" "}
+                        Encomenda
+                      </label>
+                    </div>
                   </div>
+                  {form.encomenda ? (
+                    <p className="muted" style={{ marginTop: 0 }}>
+                      Ao salvar como encomenda: status Encomenda, vínculo de estoque deste lançamento é removido e o
+                      estoque aplicado é revertido.
+                    </p>
+                  ) : null}
                   <div className="field">
                     <label>Foto</label>
                     <input type="file" accept="image/*" onChange={onFoto} />
