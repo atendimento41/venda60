@@ -72,7 +72,7 @@ export async function getRelatorioVendasPorVendedor(filtros?: { unidade?: string
     args: [vendasHojeMargem.sqlInicio, vendasHojeMargem.sqlFim],
   });
   const primeMes = await client.execute({
-    sql: `SELECT data, vendedor, unidade, quantidade FROM prime_vendas
+    sql: `SELECT data, vendedor, unidade, quantidade, valor FROM prime_vendas
           WHERE data >= ? AND data <= ?
             AND coalesce(upper(status), '') != 'CANCELADO'`,
     args: [periodo.inicio, `${periodo.fim}T23:59:59.999Z`],
@@ -83,6 +83,7 @@ export async function getRelatorioVendasPorVendedor(filtros?: { unidade?: string
   });
 
   const diaria: Record<string, number> = {};
+  const diariaPrime: Record<string, { qtd: number; valor: number; comissao: number }> = {};
   const mensal: Record<
     string,
     {
@@ -95,6 +96,7 @@ export async function getRelatorioVendasPorVendedor(filtros?: { unidade?: string
       comissaoPrime: number;
     }
   > = {};
+  const mensalPrime: Record<string, { qtd: number; valor: number; comissao: number }> = {};
   const totaisUnidades: Record<string, number> = {
     PKS: 0,
     "PIER 21": 0,
@@ -104,6 +106,12 @@ export async function getRelatorioVendasPorVendedor(filtros?: { unidade?: string
 
   let totalDiaria = 0;
   let totalMensal = 0;
+  let totalDiariaPrimeValor = 0;
+  let totalDiariaPrimeQtd = 0;
+  let totalDiariaPrimeComissao = 0;
+  let totalMensalPrimeValor = 0;
+  let totalMensalPrimeQtd = 0;
+  let totalMensalPrimeComissao = 0;
 
   for (const row of vendasHoje.rows) {
     if (dataYmd(row.data) !== hoje) continue;
@@ -142,21 +150,43 @@ export async function getRelatorioVendasPorVendedor(filtros?: { unidade?: string
     if (unidadeF && normalizeUpper(row.unidade) !== unidadeF) continue;
     const qt = Number(row.quantidade) || 0;
     if (qt <= 0) continue;
+    const valor = Number(row.valor) || 0;
     const comPrime = qt * 1.0;
     const vendedor = String(row.vendedor || "—");
 
     if (ymd === hoje) {
-      diaria[vendedor] = (diaria[vendedor] || 0) + comPrime;
-      totalDiaria += comPrime;
+      if (!diariaPrime[vendedor]) diariaPrime[vendedor] = { qtd: 0, valor: 0, comissao: 0 };
+      diariaPrime[vendedor].qtd += qt;
+      diariaPrime[vendedor].valor += valor;
+      diariaPrime[vendedor].comissao += comPrime;
+      totalDiariaPrimeQtd += qt;
+      totalDiariaPrimeValor += valor;
+      totalDiariaPrimeComissao += comPrime;
     }
 
     if (dataNoIntervalo(ymd, periodo.inicio, periodo.fim)) {
       ensureMensalVendedor(mensal, vendedor).comissaoPrime += comPrime;
+      if (!mensalPrime[vendedor]) mensalPrime[vendedor] = { qtd: 0, valor: 0, comissao: 0 };
+      mensalPrime[vendedor].qtd += qt;
+      mensalPrime[vendedor].valor += valor;
+      mensalPrime[vendedor].comissao += comPrime;
+      totalMensalPrimeQtd += qt;
+      totalMensalPrimeValor += valor;
+      totalMensalPrimeComissao += comPrime;
     }
   }
 
   const diariaSorted = Object.entries(diaria)
     .map(([vendedor, valor]) => ({ vendedor, valor: Number(valor.toFixed(2)) }))
+    .sort((a, b) => b.valor - a.valor);
+
+  const diariaPrimeSorted = Object.entries(diariaPrime)
+    .map(([vendedor, obj]) => ({
+      vendedor,
+      qtd: obj.qtd,
+      valor: Number(obj.valor.toFixed(2)),
+      comissao: Number(obj.comissao.toFixed(2)),
+    }))
     .sort((a, b) => b.valor - a.valor);
 
   const mensalSorted = Object.entries(mensal)
@@ -179,6 +209,24 @@ export async function getRelatorioVendasPorVendedor(filtros?: { unidade?: string
           obj.comissaoPrime
         ).toFixed(2)
       ),
+      comissaoVendas: Number(
+        (
+          obj.comissaoPhoto +
+          obj.comissaoTempoExtra +
+          obj.comissaoEscape +
+          obj.comissao3d +
+          obj.comissaoProdutos
+        ).toFixed(2)
+      ),
+    }))
+    .sort((a, b) => b.valor - a.valor);
+
+  const mensalPrimeSorted = Object.entries(mensalPrime)
+    .map(([vendedor, obj]) => ({
+      vendedor,
+      qtd: obj.qtd,
+      valor: Number(obj.valor.toFixed(2)),
+      comissao: Number(obj.comissao.toFixed(2)),
     }))
     .sort((a, b) => b.valor - a.valor);
 
@@ -188,6 +236,14 @@ export async function getRelatorioVendasPorVendedor(filtros?: { unidade?: string
     mensal: mensalSorted,
     totalDiaria: Number(totalDiaria.toFixed(2)),
     totalMensal: Number(totalMensal.toFixed(2)),
+    diariaPrime: diariaPrimeSorted,
+    mensalPrime: mensalPrimeSorted,
+    totalDiariaPrimeValor: Number(totalDiariaPrimeValor.toFixed(2)),
+    totalDiariaPrimeQtd,
+    totalDiariaPrimeComissao: Number(totalDiariaPrimeComissao.toFixed(2)),
+    totalMensalPrimeValor: Number(totalMensalPrimeValor.toFixed(2)),
+    totalMensalPrimeQtd,
+    totalMensalPrimeComissao: Number(totalMensalPrimeComissao.toFixed(2)),
     totaisUnidades,
     unidadeFiltro: unidadeF || null,
   };
