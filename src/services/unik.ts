@@ -554,6 +554,69 @@ export async function atualizarLancamentoUnik(dados: {
   return { ok: true, message: querEncomenda ? "Encomenda salva." : "Lançamento salvo." };
 }
 
+/** Edição em lote: só custo, sugestão e/ou quem recebeu (campos marcados). */
+export async function atualizarLancamentosUnikLote(dados: {
+  ids: number[];
+  aplicarCusto?: boolean;
+  aplicarSugestao?: boolean;
+  aplicarRecebidoPor?: boolean;
+  custo?: number | string;
+  sugestaoVenda?: number | string;
+  recebidoPor?: string;
+}) {
+  await ensureUnikSchema();
+  const ids = [...new Set((dados.ids || []).map(Number).filter((n) => Number.isFinite(n) && n > 0))];
+  if (!ids.length) throw new Error("Selecione ao menos um lançamento.");
+
+  const aplicarCusto = Boolean(dados.aplicarCusto);
+  const aplicarSugestao = Boolean(dados.aplicarSugestao);
+  const aplicarRecebido = Boolean(dados.aplicarRecebidoPor);
+  if (!aplicarCusto && !aplicarSugestao && !aplicarRecebido) {
+    throw new Error("Marque ao menos um campo para alterar (custo, sugestão ou quem recebeu).");
+  }
+
+  const patch: { custo?: number; sugestaoVenda?: number; recebidoPor?: string } = {};
+  if (aplicarCusto) patch.custo = parsePreco(dados.custo);
+  if (aplicarSugestao) patch.sugestaoVenda = parsePreco(dados.sugestaoVenda);
+  if (aplicarRecebido) patch.recebidoPor = normalizeText(dados.recebidoPor);
+
+  const ctx = await contextoUnik();
+  const skusSync = new Set<string>();
+  let atualizados = 0;
+
+  for (const id of ids) {
+    const [row] = await db.select().from(entregaUnik).where(eq(entregaUnik.id, id));
+    if (!row) continue;
+    await db.update(entregaUnik).set(patch).where(eq(entregaUnik.id, id));
+    atualizados++;
+    const sku = normalizeText(row.sku) || ctx.skuPorChave[chaveNomeItem(row.nome)] || "";
+    const enc = classificarStatusUnik(row.status, row.tipo) === "ENCOMENDA";
+    if (sku && !enc && (aplicarCusto || aplicarSugestao)) skusSync.add(sku);
+  }
+
+  for (const sku of skusSync) {
+    await sincronizarCustoSugestaoItemPorSku(sku);
+  }
+
+  const campos: string[] = [];
+  if (aplicarCusto) campos.push("custo");
+  if (aplicarSugestao) campos.push("sugestão");
+  if (aplicarRecebido) campos.push("quem recebeu");
+
+  await registrarLog(
+    LOG_TIPO.LANCAMENTO_UNIK,
+    { ids, ...patch, qtd: atualizados },
+    true,
+    `Edição em lote UNIK (${atualizados}): ${campos.join(", ")}`
+  );
+
+  return {
+    ok: true,
+    atualizados,
+    message: `${atualizados} lançamento(s) atualizado(s) (${campos.join(", ")}).`,
+  };
+}
+
 export async function excluirLancamentoUnik(idBruto: number) {
   await ensureUnikSchema();
   const id = Number(idBruto);

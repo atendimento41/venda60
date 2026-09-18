@@ -10,6 +10,7 @@ import {
   listarItensParaUnik,
   listarLancamentosUnik,
   atualizarLancamentoUnik,
+  atualizarLancamentosUnikLote,
   excluirLancamentoUnik,
   getUnikEstoqueGeral,
   salvarPrecoFinalUnik,
@@ -137,6 +138,9 @@ export async function POST(req: Request) {
     }
     if (body?.acao === "editar-lancamento") {
       return NextResponse.json(await atualizarLancamentoUnik(body));
+    }
+    if (body?.acao === "editar-lancamentos-lote") {
+      return NextResponse.json(await atualizarLancamentosUnikLote(body));
     }
     if (body?.acao === "excluir-lancamento") {
       return NextResponse.json(await excluirLancamentoUnik(body.id));

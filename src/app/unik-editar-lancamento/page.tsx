@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
 import { formatMoeda, asArray, comprimirFoto } from "@/lib/client";
 
@@ -50,6 +50,15 @@ export default function EditarLancamentoUnikPage() {
     encomenda: false,
   });
   const [salvando, setSalvando] = useState("");
+  const [sel, setSel] = useState<Set<number>>(new Set());
+  const [lote, setLote] = useState({
+    aplicarCusto: false,
+    aplicarSugestao: false,
+    aplicarRecebidoPor: false,
+    custo: "",
+    sugestao: "",
+    recebidoPor: "",
+  });
 
   async function carregar(custoF = filtroCusto, sugestaoF = filtroSugestao, nomeF = busca, itemF = buscaItem) {
     const q = new URLSearchParams({ tipo: "lancamentos", todos: "1" });
@@ -63,11 +72,29 @@ export default function EditarLancamentoUnikPage() {
       return;
     }
     setLista(asArray(d.lancamentos) as Mov[]);
+    setSel(new Set());
   }
 
   useEffect(() => {
     carregar();
   }, []);
+
+  const idsVisiveis = useMemo(() => lista.map((m) => m.id), [lista]);
+  const todosSel = idsVisiveis.length > 0 && idsVisiveis.every((id) => sel.has(id));
+
+  function toggleSel(id: number) {
+    setSel((prev) => {
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  }
+
+  function toggleTodos() {
+    if (todosSel) setSel(new Set());
+    else setSel(new Set(idsVisiveis));
+  }
 
   function abrir(m: Mov) {
     setEditId(m.id);
@@ -125,6 +152,50 @@ export default function EditarLancamentoUnikPage() {
     carregar();
   }
 
+  async function salvarLote() {
+    if (sel.size === 0) {
+      setErro("Selecione ao menos um lançamento.");
+      return;
+    }
+    if (!lote.aplicarCusto && !lote.aplicarSugestao && !lote.aplicarRecebidoPor) {
+      setErro("Marque ao menos um campo para aplicar em lote (custo, sugestão ou quem recebeu).");
+      return;
+    }
+    setErro("");
+    setMsg("");
+    setSalvando("lote");
+    const res = await fetch("/api/unik", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        acao: "editar-lancamentos-lote",
+        ids: [...sel],
+        aplicarCusto: lote.aplicarCusto,
+        aplicarSugestao: lote.aplicarSugestao,
+        aplicarRecebidoPor: lote.aplicarRecebidoPor,
+        custo: lote.custo,
+        sugestaoVenda: lote.sugestao,
+        recebidoPor: lote.recebidoPor,
+      }),
+    });
+    const dataRes = await res.json();
+    setSalvando("");
+    if (!res.ok) {
+      setErro(dataRes.error || "Falha na edição em lote");
+      return;
+    }
+    setMsg(dataRes.message);
+    setLote({
+      aplicarCusto: false,
+      aplicarSugestao: false,
+      aplicarRecebidoPor: false,
+      custo: "",
+      sugestao: "",
+      recebidoPor: "",
+    });
+    carregar();
+  }
+
   async function excluir(m: Mov) {
     if (!window.confirm(`Excluir o lançamento “${m.nomeEntrega}”? O estoque aplicado neste lançamento é revertido.`)) {
       return;
@@ -151,9 +222,8 @@ export default function EditarLancamentoUnikPage() {
   return (
     <AppShell title="UNIK · Edição lançamento">
       <p className="muted">
-        Altere quantidade, quem recebeu, custo, sugestão, foto ou marque como <strong>encomenda</strong>. Encomenda
-        não mexe no estoque (custo = total 60→UNIK). Ao aumentar quantidade em lançamento normal, o excedente entra
-        só no estoque GERAL. Não é permitido diminuir.
+        Edite um a um (quantidade, foto, encomenda…) ou selecione vários e aplique em lote só{" "}
+        <strong>custo UNIK</strong>, <strong>sugestão de preço</strong> e/ou <strong>quem recebeu</strong>.
       </p>
 
       <div className="filters">
@@ -212,6 +282,83 @@ export default function EditarLancamentoUnikPage() {
         </button>
       </div>
 
+      {lista.length > 0 ? (
+        <section className="dash-card" style={{ marginBottom: 16 }}>
+          <h2 style={{ marginTop: 0 }}>Edição em lote</h2>
+          <p className="muted" style={{ marginTop: 0 }}>
+            {sel.size} selecionado(s). Marque os campos que deseja alterar e salve — os demais ficam iguais.
+          </p>
+          <div className="btn-row" style={{ marginBottom: 10 }}>
+            <label className="check-inline">
+              <input type="checkbox" checked={todosSel} onChange={toggleTodos} /> Selecionar todos do filtro
+            </label>
+            <button type="button" className="btn btn-secondary" disabled={sel.size === 0} onClick={() => setSel(new Set())}>
+              Limpar seleção
+            </button>
+          </div>
+          <div className="filters">
+            <div className="field">
+              <label className="check-inline">
+                <input
+                  type="checkbox"
+                  checked={lote.aplicarCusto}
+                  onChange={(e) => setLote((f) => ({ ...f, aplicarCusto: e.target.checked }))}
+                />{" "}
+                Aplicar custo UNIK
+              </label>
+              <input
+                value={lote.custo}
+                disabled={!lote.aplicarCusto}
+                onChange={(e) => setLote((f) => ({ ...f, custo: e.target.value }))}
+                inputMode="decimal"
+                placeholder="0,00"
+              />
+            </div>
+            <div className="field">
+              <label className="check-inline">
+                <input
+                  type="checkbox"
+                  checked={lote.aplicarSugestao}
+                  onChange={(e) => setLote((f) => ({ ...f, aplicarSugestao: e.target.checked }))}
+                />{" "}
+                Aplicar sugestão de preço
+              </label>
+              <input
+                value={lote.sugestao}
+                disabled={!lote.aplicarSugestao}
+                onChange={(e) => setLote((f) => ({ ...f, sugestao: e.target.value }))}
+                inputMode="decimal"
+                placeholder="0,00"
+              />
+            </div>
+            <div className="field">
+              <label className="check-inline">
+                <input
+                  type="checkbox"
+                  checked={lote.aplicarRecebidoPor}
+                  onChange={(e) => setLote((f) => ({ ...f, aplicarRecebidoPor: e.target.checked }))}
+                />{" "}
+                Aplicar quem recebeu
+              </label>
+              <input
+                value={lote.recebidoPor}
+                disabled={!lote.aplicarRecebidoPor}
+                onChange={(e) => setLote((f) => ({ ...f, recebidoPor: e.target.value }))}
+                placeholder="Nome de quem recebeu"
+              />
+            </div>
+          </div>
+          <button
+            type="button"
+            className="btn"
+            disabled={salvando === "lote" || sel.size === 0}
+            onClick={() => void salvarLote()}
+          >
+            {salvando === "lote" ? "…" : `Salvar em ${sel.size || 0} lançamento(s)`}
+          </button>
+        </section>
+      ) : null}
+
       {msg && <p className="msg-ok">{msg}</p>}
       {erro && <p className="msg-erro">{erro}</p>}
 
@@ -224,6 +371,9 @@ export default function EditarLancamentoUnikPage() {
           return (
             <section key={m.id} className="dash-card" style={{ marginBottom: 12 }}>
               <div className="btn-row" style={{ alignItems: "flex-start" }}>
+                <label className="check-inline" style={{ marginTop: 8 }}>
+                  <input type="checkbox" checked={sel.has(m.id)} onChange={() => toggleSel(m.id)} />
+                </label>
                 {m.fotoUrl ? <img className="foto-thumb" src={m.fotoUrl} alt="" /> : null}
                 <div style={{ flex: 1 }}>
                   <h2 style={{ margin: 0 }}>
