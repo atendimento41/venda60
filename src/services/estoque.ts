@@ -173,6 +173,7 @@ export async function getEstoqueConsulta(filtros: {
   unidade?: string | null;
   categoria?: string | null;
   subcategoria?: string | null;
+  nome?: string | null;
   estoqueAtual?: string | null;
   /** Filtro do depósito GERAL: gt0 | eq0 | (vazio = todos). */
   estoqueGeral?: string | null;
@@ -182,6 +183,7 @@ export async function getEstoqueConsulta(filtros: {
   const unidadeF = normalizeUpper(filtros.unidade || "");
   const catF = normalizeUpper(filtros.categoria || "");
   const subF = normalizeUpper(filtros.subcategoria || "");
+  const nomeF = normalizeUpper(filtros.nome || "");
   const geral = normalizeUpper("GERAL");
 
   const allItens = await db.select().from(itens).where(eq(itens.ativo, true));
@@ -320,6 +322,13 @@ export async function getEstoqueConsulta(filtros: {
     if (subF && normalizeUpper(item.subcategoriaMeep) !== subF) continue;
     if (filtroFoto === "sem" && String(item.fotoUrl || "").trim()) continue;
     if (filtroFoto === "com" && !String(item.fotoUrl || "").trim()) continue;
+    if (
+      nomeF &&
+      !normalizeUpper(item.descricao).includes(nomeF) &&
+      !normalizeUpper(item.sku).includes(nomeF)
+    ) {
+      continue;
+    }
     linhas.push({
       unidade: unidadeF ? String(filtros.unidade) : "Todas",
       sku: item.sku,
@@ -335,6 +344,13 @@ export async function getEstoqueConsulta(filtros: {
       estoqueGeral: 0,
       ilimitado: true,
     });
+  }
+
+  if (nomeF) {
+    linhas = linhas.filter(
+      (l) =>
+        normalizeUpper(l.item).includes(nomeF) || normalizeUpper(l.sku).includes(nomeF)
+    );
   }
 
   registrarLogConsulta(LOG_TIPO.CONSULTA_ESTOQUE, filtros, "Consulta estoque operacional");

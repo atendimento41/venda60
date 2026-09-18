@@ -29,6 +29,7 @@ export default function UltimosLancamentosPage() {
   const [vendedores, setVendedores] = useState<VendedorClient[]>([]);
   const [unidade, setUnidade] = useState("");
   const [vendedor, setVendedor] = useState("");
+  const [nome, setNome] = useState("");
   const [mes, setMes] = useState(mesAtualISO());
   const [linhas, setLinhas] = useState<Lancamento[]>([]);
   const [page, setPage] = useState(1);
@@ -48,6 +49,7 @@ export default function UltimosLancamentosPage() {
     });
     if (unidade) q.set("unidade", unidade);
     if (vendedor) q.set("vendedor", vendedor);
+    if (nome.trim()) q.set("nome", nome.trim());
     const res = await apiGet<
       | Lancamento[]
       | { items: Lancamento[]; page: number; totalPages: number; total: number }
@@ -101,6 +103,20 @@ export default function UltimosLancamentosPage() {
               </option>
             ))}
           </select>
+        </div>
+        <div className="field">
+          <label>Nome do item</label>
+          <input
+            value={nome}
+            onChange={(e) => setNome(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                setPage(1);
+                void carregar(1);
+              }
+            }}
+            placeholder="Buscar por nome ou SKU"
+          />
         </div>
         <div className="field">
           <label>Mês</label>

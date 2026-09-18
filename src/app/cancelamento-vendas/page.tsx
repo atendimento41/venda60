@@ -27,6 +27,7 @@ export default function CancelamentoPage() {
   const [dataFim, setDataFim] = useState(hojeISO());
   const [unidade, setUnidade] = useState("");
   const [vendedor, setVendedor] = useState("");
+  const [nome, setNome] = useState("");
   const [categoria, setCategoria] = useState("");
   const [subcategoria, setSubcategoria] = useState("");
   const [vendedores, setVendedores] = useState<string[]>([]);
@@ -64,6 +65,7 @@ export default function CancelamentoPage() {
     if (dataFim) q.set("dataFim", dataFim);
     if (unidade) q.set("unidade", unidade);
     if (vendedor) q.set("vendedor", vendedor);
+    if (nome.trim()) q.set("nome", nome.trim());
     if (cat) q.set("categoria", cat);
     if (sub) q.set("subcategoria", sub);
     if (incluirCanceladas) q.set("incluirCanceladas", "true");
@@ -177,6 +179,17 @@ export default function CancelamentoPage() {
               </option>
             ))}
           </select>
+        </div>
+        <div className="field">
+          <label>Nome do item</label>
+          <input
+            value={nome}
+            onChange={(e) => setNome(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void carregar();
+            }}
+            placeholder="Buscar por nome ou SKU"
+          />
         </div>
         <div className="field">
           <label>Categoria</label>

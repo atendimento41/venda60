@@ -111,6 +111,7 @@ export type FiltroUltimasVendas = {
   mes?: string;
   unidade?: string;
   vendedor?: string;
+  nome?: string;
   limit?: number;
   page?: number;
   pageSize?: number;
@@ -186,6 +187,11 @@ export async function getUltimasVendas(
     where.push("TRIM(vendedor) = TRIM(?)");
     args.push(f.vendedor);
   }
+  if (f.nome) {
+    const like = `%${normalizeUpper(f.nome)}%`;
+    where.push("(UPPER(COALESCE(descricao, '')) LIKE ? OR UPPER(COALESCE(sku, '')) LIKE ?)");
+    args.push(like, like);
+  }
 
   const whereSql = where.join(" AND ");
 
@@ -235,7 +241,7 @@ export async function getUltimasVendas(
 
   registrarLogConsulta(
     LOG_TIPO.CONSULTA_VENDAS,
-    { inicio, fim, unidade: f.unidade || "", vendedor: f.vendedor || "", n: out.length, page },
+    { inicio, fim, unidade: f.unidade || "", vendedor: f.vendedor || "", nome: f.nome || "", n: out.length, page },
     "Consulta últimos lançamentos"
   );
 

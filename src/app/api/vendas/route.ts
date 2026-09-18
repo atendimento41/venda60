@@ -43,6 +43,7 @@ export async function GET(req: Request) {
           mes: mes || undefined,
           unidade: unidade || undefined,
           vendedor: vendedor || undefined,
+          nome: searchParams.get("nome") || searchParams.get("item") || undefined,
           limit: limit ? Number(limit) : ultimas ? Number(ultimas) : undefined,
           page: searchParams.get("page") ? Number(searchParams.get("page")) : undefined,
           pageSize: searchParams.get("pageSize")

@@ -29,6 +29,7 @@ export default function EstoquePage() {
   const [unidade, setUnidade] = useState("");
   const [categoria, setCategoria] = useState("");
   const [subcategoria, setSubcategoria] = useState("");
+  const [nome, setNome] = useState("");
   const [filtroEstoque, setFiltroEstoque] = useState("gt0");
   const [filtroGeral, setFiltroGeral] = useState("");
   const [filtroFoto, setFiltroFoto] = useState("");
@@ -55,6 +56,7 @@ export default function EstoquePage() {
     if (unidade) q.set("unidade", unidade);
     if (categoria) q.set("categoria", categoria);
     if (subcategoria) q.set("subcategoria", subcategoria);
+    if (nome.trim()) q.set("nome", nome.trim());
     if (filtroEstoque) q.set("estoqueAtual", filtroEstoque);
     if (filtroGeral) q.set("estoqueGeral", filtroGeral);
     if (filtroFoto) q.set("foto", filtroFoto);
@@ -150,6 +152,17 @@ export default function EstoquePage() {
               </option>
             ))}
           </select>
+        </div>
+        <div className="field">
+          <label>Nome do item</label>
+          <input
+            value={nome}
+            onChange={(e) => setNome(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void carregar();
+            }}
+            placeholder="Buscar por nome ou SKU"
+          />
         </div>
         <div className="field">
           <label>Estoque na loja</label>
