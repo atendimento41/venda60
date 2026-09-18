@@ -648,9 +648,11 @@ export async function atualizarLancamentosUnikLote(dados: {
   aplicarCusto?: boolean;
   aplicarSugestao?: boolean;
   aplicarRecebidoPor?: boolean;
+  aplicarCategoria?: boolean;
   custo?: number | string;
   sugestaoVenda?: number | string;
   recebidoPor?: string;
+  categoria?: string;
 }) {
   await ensureUnikSchema();
   const ids = [...new Set((dados.ids || []).map(Number).filter((n) => Number.isFinite(n) && n > 0))];
@@ -659,14 +661,20 @@ export async function atualizarLancamentosUnikLote(dados: {
   const aplicarCusto = Boolean(dados.aplicarCusto);
   const aplicarSugestao = Boolean(dados.aplicarSugestao);
   const aplicarRecebido = Boolean(dados.aplicarRecebidoPor);
-  if (!aplicarCusto && !aplicarSugestao && !aplicarRecebido) {
-    throw new Error("Marque ao menos um campo para alterar (custo, sugestão ou quem recebeu).");
+  const aplicarCategoria = Boolean(dados.aplicarCategoria);
+  if (!aplicarCusto && !aplicarSugestao && !aplicarRecebido && !aplicarCategoria) {
+    throw new Error("Marque ao menos um campo para alterar (custo, sugestão, quem recebeu ou categoria).");
   }
 
-  const patch: { custo?: number; sugestaoVenda?: number; recebidoPor?: string } = {};
+  const patch: { custo?: number; sugestaoVenda?: number; recebidoPor?: string; categoria?: string } = {};
   if (aplicarCusto) patch.custo = parsePreco(dados.custo);
   if (aplicarSugestao) patch.sugestaoVenda = parsePreco(dados.sugestaoVenda);
   if (aplicarRecebido) patch.recebidoPor = normalizeText(dados.recebidoPor);
+  if (aplicarCategoria) {
+    const cat = normalizeText(dados.categoria);
+    patch.categoria = cat;
+    if (cat) await criarCategoriaUnik(cat);
+  }
 
   const ctx = await contextoUnik();
   const skusSync = new Set<string>();
@@ -690,6 +698,7 @@ export async function atualizarLancamentosUnikLote(dados: {
   if (aplicarCusto) campos.push("custo");
   if (aplicarSugestao) campos.push("sugestão");
   if (aplicarRecebido) campos.push("quem recebeu");
+  if (aplicarCategoria) campos.push("categoria");
 
   await registrarLog(
     LOG_TIPO.LANCAMENTO_UNIK,

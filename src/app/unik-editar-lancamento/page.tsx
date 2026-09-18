@@ -61,9 +61,12 @@ export default function EditarLancamentoUnikPage() {
     aplicarCusto: false,
     aplicarSugestao: false,
     aplicarRecebidoPor: false,
+    aplicarCategoria: false,
     custo: "",
     sugestao: "",
     recebidoPor: "",
+    categoria: "",
+    novaCategoria: "",
   });
 
   async function carregar(
@@ -209,9 +212,18 @@ export default function EditarLancamentoUnikPage() {
       setErro("Selecione ao menos um lançamento.");
       return;
     }
-    if (!lote.aplicarCusto && !lote.aplicarSugestao && !lote.aplicarRecebidoPor) {
-      setErro("Marque ao menos um campo para aplicar em lote (custo, sugestão ou quem recebeu).");
+    if (
+      !lote.aplicarCusto &&
+      !lote.aplicarSugestao &&
+      !lote.aplicarRecebidoPor &&
+      !lote.aplicarCategoria
+    ) {
+      setErro("Marque ao menos um campo para aplicar em lote (custo, sugestão, quem recebeu ou categoria).");
       return;
+    }
+    let catLote = lote.categoria.trim();
+    if (lote.aplicarCategoria && !catLote && lote.novaCategoria.trim()) {
+      catLote = lote.novaCategoria.trim();
     }
     setErro("");
     setMsg("");
@@ -225,9 +237,11 @@ export default function EditarLancamentoUnikPage() {
         aplicarCusto: lote.aplicarCusto,
         aplicarSugestao: lote.aplicarSugestao,
         aplicarRecebidoPor: lote.aplicarRecebidoPor,
+        aplicarCategoria: lote.aplicarCategoria,
         custo: lote.custo,
         sugestaoVenda: lote.sugestao,
         recebidoPor: lote.recebidoPor,
+        categoria: catLote,
       }),
     });
     const dataRes = await res.json();
@@ -241,9 +255,12 @@ export default function EditarLancamentoUnikPage() {
       aplicarCusto: false,
       aplicarSugestao: false,
       aplicarRecebidoPor: false,
+      aplicarCategoria: false,
       custo: "",
       sugestao: "",
       recebidoPor: "",
+      categoria: "",
+      novaCategoria: "",
     });
     carregar();
   }
@@ -274,8 +291,9 @@ export default function EditarLancamentoUnikPage() {
   return (
     <AppShell title="UNIK · Edição lançamento">
       <p className="muted">
-        Edite um a um (quantidade, foto, categoria, encomenda…) ou selecione vários e aplique em lote só{" "}
-        <strong>custo UNIK</strong>, <strong>sugestão de preço</strong> e/ou <strong>quem recebeu</strong>.
+        Edite um a um (quantidade, foto, categoria, encomenda…) ou selecione vários e aplique em lote{" "}
+        <strong>custo UNIK</strong>, <strong>sugestão</strong>, <strong>quem recebeu</strong> e/ou{" "}
+        <strong>categoria</strong>.
       </p>
 
       <div className="filters">
@@ -415,6 +433,37 @@ export default function EditarLancamentoUnikPage() {
                 disabled={!lote.aplicarRecebidoPor}
                 onChange={(e) => setLote((f) => ({ ...f, recebidoPor: e.target.value }))}
                 placeholder="Nome de quem recebeu"
+              />
+            </div>
+            <div className="field">
+              <label className="check-inline">
+                <input
+                  type="checkbox"
+                  checked={lote.aplicarCategoria}
+                  onChange={(e) => setLote((f) => ({ ...f, aplicarCategoria: e.target.checked }))}
+                />{" "}
+                Aplicar categoria UNIK
+              </label>
+              <select
+                value={lote.categoria}
+                disabled={!lote.aplicarCategoria}
+                onChange={(e) => setLote((f) => ({ ...f, categoria: e.target.value, novaCategoria: "" }))}
+              >
+                <option value="">Sem categoria</option>
+                {categorias.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+              <input
+                value={lote.novaCategoria}
+                disabled={!lote.aplicarCategoria}
+                onChange={(e) =>
+                  setLote((f) => ({ ...f, novaCategoria: e.target.value, categoria: "" }))
+                }
+                placeholder="Ou digite nova categoria"
+                style={{ marginTop: 6 }}
               />
             </div>
           </div>
