@@ -8,6 +8,7 @@ import {
   getUnikRelatorioEncomendas,
   getUnikXItens,
   desvincularNomeUnik,
+  desvincularLancamentoUnik,
   listarItensParaUnik,
   listarLancamentosUnik,
   listarCategoriasUnik,
@@ -161,6 +162,9 @@ export async function POST(req: Request) {
     }
     if (body?.acao === "desvincular") {
       return NextResponse.json(await desvincularNomeUnik(body.nome));
+    }
+    if (body?.acao === "desvincular-lancamento") {
+      return NextResponse.json(await desvincularLancamentoUnik(body.id));
     }
     if (body?.acao === "criar-categoria") {
       return NextResponse.json(await criarCategoriaUnik(body.nome));

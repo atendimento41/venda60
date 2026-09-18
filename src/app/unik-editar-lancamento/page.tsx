@@ -13,6 +13,8 @@ type Mov = {
   unidade: string;
   nomeEntrega: string;
   descricaoItem: string;
+  sku?: string;
+  semSku?: boolean;
   quantidade: number;
   fotoUrl?: string;
   fotoLancamento?: string;
@@ -281,6 +283,38 @@ export default function EditarLancamentoUnikPage() {
     setSalvando("");
     if (!res.ok) {
       setErro(dataRes.error || "Falha ao excluir");
+      return;
+    }
+    setMsg(dataRes.message);
+    setEditId(0);
+    carregar();
+  }
+
+  function estaVinculado(m: Mov) {
+    return Boolean(m.sku || m.descricaoItem) && !ehEncomenda(m);
+  }
+
+  async function desvincular(m: Mov) {
+    const itemLabel = m.descricaoItem || m.sku || "item";
+    if (
+      !window.confirm(
+        `Desvincular “${m.nomeEntrega}” de “${itemLabel}”? O estoque aplicado neste lançamento é revertido e ele volta a pendente.`
+      )
+    ) {
+      return;
+    }
+    setErro("");
+    setMsg("");
+    setSalvando(`u:${m.id}`);
+    const res = await fetch("/api/unik", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ acao: "desvincular-lancamento", id: m.id }),
+    });
+    const dataRes = await res.json();
+    setSalvando("");
+    if (!res.ok) {
+      setErro(dataRes.error || "Falha ao desvincular");
       return;
     }
     setMsg(dataRes.message);
@@ -630,6 +664,15 @@ export default function EditarLancamentoUnikPage() {
                     <button className="btn" disabled={salvando === `s:${m.id}`} onClick={() => void salvar(m)}>
                       {salvando === `s:${m.id}` ? "…" : "Salvar"}
                     </button>
+                    {estaVinculado(m) ? (
+                      <button
+                        className="btn btn-secondary"
+                        disabled={salvando === `u:${m.id}`}
+                        onClick={() => void desvincular(m)}
+                      >
+                        {salvando === `u:${m.id}` ? "…" : "Desvincular item"}
+                      </button>
+                    ) : null}
                     <button
                       className="btn btn-secondary"
                       disabled={salvando === `d:${m.id}`}

@@ -1390,6 +1390,55 @@ export async function desvincularNomeUnik(nome: string) {
   return { ok: true, message: `Vínculo de “${nomeLimpo}” desfeito. ${n} lançamento(s) voltaram a pendente.` };
 }
 
+/** Desvincula só este lançamento do item (reverte estoque aplicado e limpa SKU). */
+export async function desvincularLancamentoUnik(idBruto: number) {
+  await ensureUnikSchema();
+  const id = Number(idBruto);
+  if (!id) throw new Error("Lançamento inválido.");
+  const [row] = await db.select().from(entregaUnik).where(eq(entregaUnik.id, id));
+  if (!row) throw new Error("Lançamento não encontrado.");
+
+  const ctx = await contextoUnik();
+  const nome = normalizeText(row.nome);
+  const sku =
+    normalizeText(row.sku) || (nome ? ctx.skuPorChave[chaveNomeItem(nome)] || "" : "");
+  if (!sku) {
+    throw new Error("Este lançamento não está vinculado a um item do estoque.");
+  }
+
+  await reverterEstoqueLinha(row);
+  await db
+    .update(entregaUnik)
+    .set({ sku: "", estoqueAplicado: false })
+    .where(eq(entregaUnik.id, id));
+
+  // Se nenhum outro lançamento deste nome mantém SKU, remove o vínculo nome→item.
+  if (nome) {
+    const chave = chaveNomeItem(nome);
+    const entregas = await db.select().from(entregaUnik);
+    const aindaVinculado = entregas.some(
+      (r) => r.id !== id && chaveNomeItem(r.nome) === chave && normalizeText(r.sku)
+    );
+    if (!aindaVinculado) {
+      await db.delete(unikVinculos).where(eq(unikVinculos.nomeChave, chave));
+    }
+  }
+
+  const item = ctx.itemPorSku[normalizeUpper(sku)];
+  await registrarLog(
+    LOG_TIPO.LANCAMENTO_UNIK,
+    { id, nome, sku },
+    true,
+    `Desvínculo lançamento UNIK #${id}`
+  );
+  return {
+    ok: true,
+    message: item
+      ? `Lançamento desvinculado de “${item.descricao}”. Estoque deste lançamento foi revertido.`
+      : "Lançamento desvinculado do item. Estoque deste lançamento foi revertido.",
+  };
+}
+
 function montarNomesUnikPorSku(
   vinculos: { sku: string; nomeChave: string; nomeOriginal: string | null }[],
   entregas: { sku: string | null; nome: string | null; status: string | null; tipo: string | null }[],
