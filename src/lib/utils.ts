@@ -1,4 +1,4 @@
-export const APP_BUILD = "2026.09.18-parse-ponto";
+export const APP_BUILD = "2026.09.18-unik-cat-foto";
 export const UNIDADES_PADRAO = ["PKS", "SSU", "PIER 21", "TGS"] as const;
 export const LOG_RETENTION_DAYS = 30;
 

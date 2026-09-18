@@ -101,7 +101,12 @@ CREATE TABLE IF NOT EXISTS entrega_unik (
   custo DOUBLE PRECISION NOT NULL DEFAULT 0,
   sugestao_venda DOUBLE PRECISION NOT NULL DEFAULT 0,
   recebido_por TEXT,
-  estoque_unidade TEXT
+  estoque_unidade TEXT,
+  categoria TEXT
+);
+
+CREATE TABLE IF NOT EXISTS unik_categorias (
+  nome TEXT PRIMARY KEY
 );
 
 CREATE TABLE IF NOT EXISTS unik_vinculos (

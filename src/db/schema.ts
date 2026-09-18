@@ -125,6 +125,12 @@ export const entregaUnik = pgTable("entrega_unik", {
   sugestaoVenda: doublePrecision("sugestao_venda").notNull().default(0),
   recebidoPor: text("recebido_por"),
   estoqueUnidade: text("estoque_unidade"),
+  /** Categoria só da UNIK (não é Dash/Meep do cadastro). */
+  categoria: text("categoria"),
+});
+
+export const unikCategorias = pgTable("unik_categorias", {
+  nome: text("nome").primaryKey(),
 });
 
 export const unikVinculos = pgTable("unik_vinculos", {

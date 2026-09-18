@@ -203,7 +203,8 @@ export async function ensureUnikSchema() {
       custo DOUBLE PRECISION NOT NULL DEFAULT 0,
       sugestao_venda DOUBLE PRECISION NOT NULL DEFAULT 0,
       recebido_por TEXT,
-      estoque_unidade TEXT
+      estoque_unidade TEXT,
+      categoria TEXT
     )
   `);
   await client.execute(`
@@ -211,6 +212,11 @@ export async function ensureUnikSchema() {
       nome_chave TEXT PRIMARY KEY,
       sku TEXT NOT NULL,
       nome_original TEXT
+    )
+  `);
+  await client.execute(`
+    CREATE TABLE IF NOT EXISTS unik_categorias (
+      nome TEXT PRIMARY KEY
     )
   `);
   const cols = await colunasTabela("entrega_unik");
@@ -236,6 +242,9 @@ export async function ensureUnikSchema() {
   if (!cols.has("estoque_unidade")) {
     await client.execute("ALTER TABLE entrega_unik ADD COLUMN estoque_unidade TEXT");
   }
+  if (!cols.has("categoria")) {
+    await client.execute("ALTER TABLE entrega_unik ADD COLUMN categoria TEXT");
+  }
   await client.execute(`
     CREATE TABLE IF NOT EXISTS unik_loja_status (
       sku TEXT NOT NULL,
@@ -247,5 +256,6 @@ export async function ensureUnikSchema() {
   `);
   await client.execute("CREATE INDEX IF NOT EXISTS idx_entrega_unik_data ON entrega_unik(data)");
   await client.execute("CREATE INDEX IF NOT EXISTS idx_entrega_unik_sku ON entrega_unik(sku)");
+  await client.execute("CREATE INDEX IF NOT EXISTS idx_entrega_unik_categoria ON entrega_unik(categoria)");
   unikOk = true;
 }

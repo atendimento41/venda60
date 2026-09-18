@@ -1,5 +1,14 @@
 import { db } from "@/db";
-import { entregaUnik, estoque, itens, movimentosEstoque, unikLojaStatus, unikVinculos, vendas } from "@/db/schema";
+import {
+  entregaUnik,
+  estoque,
+  itens,
+  movimentosEstoque,
+  unikCategorias,
+  unikLojaStatus,
+  unikVinculos,
+  vendas,
+} from "@/db/schema";
 import { and, desc, eq } from "drizzle-orm";
 import {
   agoraISO,
@@ -291,6 +300,7 @@ function lancamentoDeRow(
     sugestaoVenda?: number | null;
     recebidoPor?: string | null;
     estoqueUnidade?: string | null;
+    categoria?: string | null;
   },
   ctx: Awaited<ReturnType<typeof contextoUnik>>
 ) {
@@ -321,12 +331,15 @@ function lancamentoDeRow(
     sugestaoSku: sugestao?.sku || "",
     quantidade: qtd,
     deltaEstoque: delta,
+    /** Exibição geral: foto do lançamento ou do item. */
     fotoUrl: normalizeText(row.fotoUrl) || normalizeText(item?.fotoUrl),
+    /** Só a foto gravada no lançamento (edição não deve cair na do item). */
     fotoLancamento: normalizeText(row.fotoUrl),
     custo: Number(row.custo) || 0,
     sugestaoVenda: sugestaoLinha,
     precoVenda: item ? Number(item.preco) || 0 : 0,
     recebidoPor: normalizeText(row.recebidoPor),
+    categoria: normalizeText(row.categoria),
   };
 }
 
@@ -336,6 +349,7 @@ export async function listarLancamentosUnik(filtros?: {
   todos?: boolean;
   nome?: string;
   item?: string;
+  categoria?: string;
 }) {
   const ctx = await contextoUnik();
   const entregas = await db.select().from(entregaUnik).orderBy(desc(entregaUnik.id));
@@ -345,6 +359,7 @@ export async function listarLancamentosUnik(filtros?: {
   const soSugestaoZero = filtroSugestao === "0" || filtroSugestao === "eq0";
   const nomeF = chaveNomeItem(filtros?.nome);
   const itemF = normalizeUpper(filtros?.item);
+  const catF = chaveNomeItem(filtros?.categoria);
   const todos = Boolean(filtros?.todos);
 
   let filtradas = entregas;
@@ -367,19 +382,25 @@ export async function listarLancamentosUnik(filtros?: {
       );
     });
   }
+  if (catF) {
+    filtradas = filtradas.filter((row) => chaveNomeItem(row.categoria) === catF);
+  }
 
-  if (!todos && !soCustoZero && !soSugestaoZero && !nomeF) {
+  const categorias = await listarCategoriasUnik();
+
+  if (!todos && !soCustoZero && !soSugestaoZero && !nomeF && !catF) {
     let ultimaYmd = "";
     for (const row of entregas) {
       const y = dataYmd(row.data || "");
       if (y && (!ultimaYmd || y > ultimaYmd)) ultimaYmd = y;
     }
-    if (!ultimaYmd) return { data: "", dataFmt: "", lancamentos: [] };
+    if (!ultimaYmd) return { data: "", dataFmt: "", lancamentos: [], categorias };
     filtradas = entregas.filter((row) => dataYmd(row.data || "") === ultimaYmd);
     return {
       data: ultimaYmd,
       dataFmt: formatDataHoraBR(ultimaYmd),
       lancamentos: filtradas.map((row) => lancamentoDeRow(row, ctx)),
+      categorias,
     };
   }
 
@@ -387,11 +408,59 @@ export async function listarLancamentosUnik(filtros?: {
     data: "",
     dataFmt: todos ? "todos" : [soCustoZero ? "custo 0" : "", soSugestaoZero ? "sugestão 0" : ""].filter(Boolean).join(" · "),
     lancamentos: filtradas.map((row) => lancamentoDeRow(row, ctx)),
+    categorias,
   };
 }
 
 export async function listarLancamentosUltimaData() {
   return listarLancamentosUnik();
+}
+
+/** Categorias só da UNIK (não misturam com Dash/Meep do cadastro). */
+export async function listarCategoriasUnik(): Promise<string[]> {
+  await ensureUnikSchema();
+  const rows = await db.select().from(unikCategorias);
+  const nomes = new Set<string>();
+  for (const r of rows) {
+    const n = normalizeText(r.nome);
+    if (n) nomes.add(n);
+  }
+  const entregas = await db.select({ categoria: entregaUnik.categoria }).from(entregaUnik);
+  for (const r of entregas) {
+    const n = normalizeText(r.categoria);
+    if (n) nomes.add(n);
+  }
+  return [...nomes].sort((a, b) => a.localeCompare(b, "pt-BR"));
+}
+
+export async function criarCategoriaUnik(nome: string) {
+  await ensureUnikSchema();
+  const limpo = normalizeText(nome);
+  if (!limpo) throw new Error("Informe o nome da categoria.");
+  const existentes = await listarCategoriasUnik();
+  const ja = existentes.find((c) => chaveNomeItem(c) === chaveNomeItem(limpo));
+  if (ja) {
+    return { ok: true, nome: ja, message: `Categoria “${ja}” já existe.`, criada: false };
+  }
+  await db.insert(unikCategorias).values({ nome: limpo }).onConflictDoNothing();
+  return { ok: true, nome: limpo, message: `Categoria “${limpo}” criada.`, criada: true };
+}
+
+/** Custo/sugestão de lançamentos com o mesmo nome (mais recente com valor > 0). */
+export async function defaultsCustoSugestaoPorNomeUnik(nome: string) {
+  await ensureUnikSchema();
+  const chave = chaveNomeItem(nome);
+  if (!chave) return { custo: 0, sugestaoVenda: 0, encontrou: false };
+  const entregas = await db.select().from(entregaUnik).orderBy(desc(entregaUnik.id));
+  let custo = 0;
+  let sugestaoVenda = 0;
+  for (const row of entregas) {
+    if (chaveNomeItem(row.nome) !== chave) continue;
+    if (!custo && Number(row.custo) > 0) custo = Number(row.custo) || 0;
+    if (!sugestaoVenda && Number(row.sugestaoVenda) > 0) sugestaoVenda = Number(row.sugestaoVenda) || 0;
+    if (custo && sugestaoVenda) break;
+  }
+  return { custo, sugestaoVenda, encontrou: custo > 0 || sugestaoVenda > 0 };
 }
 
 export async function atualizarLancamentoUnik(dados: {
@@ -401,6 +470,7 @@ export async function atualizarLancamentoUnik(dados: {
   recebidoPor?: string;
   fotoUrl?: string;
   quantidade?: number | string;
+  categoria?: string;
   /** true = marcar como encomenda; false = tirar encomenda (volta Entregue, sem estoque até re-vincular) */
   encomenda?: boolean;
 }) {
@@ -434,6 +504,11 @@ export async function atualizarLancamentoUnik(dados: {
   }
   const recebidoPor =
     dados.recebidoPor !== undefined ? normalizeText(dados.recebidoPor) : normalizeText(row.recebidoPor);
+  const categoriaNova =
+    dados.categoria !== undefined ? normalizeText(dados.categoria) : normalizeText(row.categoria);
+  if (dados.categoria !== undefined && categoriaNova) {
+    await criarCategoriaUnik(categoriaNova);
+  }
 
   if (temQuantidade && quantidade < qtdAntiga) {
     throw new Error(
@@ -449,6 +524,7 @@ export async function atualizarLancamentoUnik(dados: {
       sugestaoVenda,
       recebidoPor,
       quantidade,
+      categoria: categoriaNova,
       sku: "",
       status: "Encomenda",
       tipo: "Encomenda",
@@ -461,7 +537,7 @@ export async function atualizarLancamentoUnik(dados: {
     await db.update(entregaUnik).set(patchEnc).where(eq(entregaUnik.id, id));
     await registrarLog(
       LOG_TIPO.LANCAMENTO_UNIK,
-      { id, custo, sugestaoVenda, recebidoPor, quantidade, encomenda: true },
+      { id, custo, sugestaoVenda, recebidoPor, quantidade, categoria: categoriaNova, encomenda: true },
       true,
       `Edição lançamento UNIK #${id} → encomenda`
     );
@@ -481,6 +557,7 @@ export async function atualizarLancamentoUnik(dados: {
       sugestaoVenda,
       recebidoPor,
       quantidade,
+      categoria: categoriaNova,
       status: "Entregue",
       tipo: "Entregue",
       sku: "",
@@ -493,7 +570,7 @@ export async function atualizarLancamentoUnik(dados: {
     await db.update(entregaUnik).set(patchDes).where(eq(entregaUnik.id, id));
     await registrarLog(
       LOG_TIPO.LANCAMENTO_UNIK,
-      { id, custo, sugestaoVenda, recebidoPor, quantidade, encomenda: false },
+      { id, custo, sugestaoVenda, recebidoPor, quantidade, categoria: categoriaNova, encomenda: false },
       true,
       `Edição lançamento UNIK #${id} · removeu encomenda`
     );
@@ -508,10 +585,11 @@ export async function atualizarLancamentoUnik(dados: {
     sugestaoVenda: number;
     recebidoPor: string;
     quantidade: number;
+    categoria: string;
     fotoUrl?: string;
     status?: string;
     tipo?: string;
-  } = { custo, sugestaoVenda, recebidoPor, quantidade };
+  } = { custo, sugestaoVenda, recebidoPor, quantidade, categoria: categoriaNova };
   if (dados.fotoUrl !== undefined) {
     const foto = normalizeText(dados.fotoUrl);
     patch.fotoUrl = foto ? validarFotoUrl(foto) : "";
@@ -540,13 +618,23 @@ export async function atualizarLancamentoUnik(dados: {
   if (skuAtual && !querEncomenda && (temSugestao || temCusto)) {
     await sincronizarCustoSugestaoItemPorSku(skuAtual);
   }
+  // Só propaga foto nova para o item se o lançamento ganhou foto; limpar foto NÃO reabre do item.
   if (skuAtual && !querEncomenda && patch.fotoUrl) {
     await sincronizarFotosItemUnik(skuAtual, patch.fotoUrl);
   }
 
   await registrarLog(
     LOG_TIPO.LANCAMENTO_UNIK,
-    { id, custo, sugestaoVenda, recebidoPor, quantidade, sku: querEncomenda ? "" : skuAtual, encomenda: querEncomenda },
+    {
+      id,
+      custo,
+      sugestaoVenda,
+      recebidoPor,
+      quantidade,
+      categoria: categoriaNova,
+      sku: querEncomenda ? "" : skuAtual,
+      encomenda: querEncomenda,
+    },
     true,
     `Edição lançamento UNIK #${id}`
   );
@@ -773,7 +861,8 @@ async function aplicarEstoqueLinha(
 
 /**
  * Sincroniza fotos entre item do estoque e lançamentos UNIK do SKU.
- * Nunca substitui foto existente: só preenche o lado que estiver sem foto.
+ * - Item sem foto pode receber a da UNIK.
+ * - Não recoloca foto em lançamento que está sem (remover na edição deve persistir).
  */
 async function sincronizarFotosItemUnik(sku: string, fotoNova = "") {
   const skuLimpo = normalizeText(sku);
@@ -791,14 +880,6 @@ async function sincronizarFotosItemUnik(sku: string, fotoNova = "") {
   // Item sem foto → pode receber a da UNIK (ou a candidata).
   if (!fotoItemAtual && fotoDeUnik) {
     await db.update(itens).set({ fotoUrl: fotoDeUnik }).where(eq(itens.sku, skuLimpo));
-  }
-
-  // Lançamentos UNIK sem foto → podem receber a do item (ou a candidata).
-  const fotoParaPreencher = fotoItemAtual || fotoDeUnik;
-  if (!fotoParaPreencher) return;
-  for (const row of doSku) {
-    if (normalizeText(row.fotoUrl)) continue;
-    await db.update(entregaUnik).set({ fotoUrl: fotoParaPreencher }).where(eq(entregaUnik.id, row.id));
   }
 }
 
@@ -834,6 +915,7 @@ export async function registrarEntregaUnik(dados: {
   custo?: number | string;
   sugestaoVenda?: number | string;
   recebidoPor?: string;
+  categoria?: string;
 }) {
   await ensureUnikSchema();
   const nome = normalizeText(dados.nome);
@@ -851,6 +933,8 @@ export async function registrarEntregaUnik(dados: {
   const custo = parsePreco(dados.custo);
   const sugestaoVenda = parsePreco(dados.sugestaoVenda);
   const recebidoPor = normalizeText(dados.recebidoPor);
+  const categoria = normalizeText(dados.categoria);
+  if (categoria) await criarCategoriaUnik(categoria);
 
   const allItens = await db.select().from(itens).where(eq(itens.ativo, true));
   const vinculos = await db.select().from(unikVinculos);
@@ -875,10 +959,11 @@ export async function registrarEntregaUnik(dados: {
       status,
       unidade,
       estoqueAplicado: false,
-      fotoUrl: fotoUrl || (item?.fotoUrl || ""),
+      fotoUrl: fotoUrl || "",
       custo,
       sugestaoVenda,
       recebidoPor,
+      categoria: categoria || null,
     })
     .returning();
 
@@ -887,7 +972,7 @@ export async function registrarEntregaUnik(dados: {
     : (await db.select().from(entregaUnik).orderBy(desc(entregaUnik.id)).limit(1))[0];
   if (item && linha) {
     await aplicarEstoqueLinha(linha, item, true);
-    await sincronizarFotosItemUnik(item.sku, fotoUrl || item.fotoUrl || "");
+    if (fotoUrl) await sincronizarFotosItemUnik(item.sku, fotoUrl);
     if (custo > 0 || sugestaoVenda > 0) {
       await sincronizarCustoSugestaoItemPorSku(item.sku);
     }
@@ -895,7 +980,7 @@ export async function registrarEntregaUnik(dados: {
 
   await registrarLog(
     LOG_TIPO.LANCAMENTO_UNIK,
-    { nome, sku: item?.sku || "", unidade, qtd, status },
+    { nome, sku: item?.sku || "", unidade, qtd, status, categoria },
     true,
     `UNIK ${status}: ${nome}`
   );

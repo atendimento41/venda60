@@ -19,7 +19,13 @@ type Mov = {
   custo?: number;
   sugestaoVenda?: number;
   recebidoPor?: string;
+  categoria?: string;
 };
+
+function moneyInput(n: number | undefined) {
+  const v = Number(n) || 0;
+  return v ? formatMoeda(v) : "";
+}
 
 export default function EntregaUnikPage() {
   const [nome, setNome] = useState("");
@@ -31,6 +37,10 @@ export default function EntregaUnikPage() {
   const [custo, setCusto] = useState("");
   const [sugestaoVenda, setSugestaoVenda] = useState("");
   const [recebidoPor, setRecebidoPor] = useState("");
+  const [categoria, setCategoria] = useState("");
+  const [novaCategoria, setNovaCategoria] = useState("");
+  const [categorias, setCategorias] = useState<string[]>([]);
+  const [hintDefaults, setHintDefaults] = useState("");
   const [msg, setMsg] = useState("");
   const [erro, setErro] = useState("");
   const [ultimaDataFmt, setUltimaDataFmt] = useState("");
@@ -45,6 +55,7 @@ export default function EntregaUnikPage() {
     }
     setUltimaDataFmt(d.dataFmt || "");
     setLancamentos(asArray(d.lancamentos) as Mov[]);
+    if (Array.isArray(d.categorias)) setCategorias(d.categorias as string[]);
   }
 
   useEffect(() => {
@@ -55,6 +66,28 @@ export default function EntregaUnikPage() {
     () => lancamentos.filter((m) => !(Number(m.custo) > 0)).length,
     [lancamentos]
   );
+
+  async function puxarDefaultsPorNome(nomeRaw: string) {
+    const n = nomeRaw.trim();
+    if (!n) {
+      setHintDefaults("");
+      return;
+    }
+    const d = await fetch(`/api/unik?tipo=defaults-nome&nome=${encodeURIComponent(n)}`).then((r) =>
+      r.json()
+    );
+    if (d?.error || !d?.encontrou) {
+      setHintDefaults("");
+      return;
+    }
+    const c = Number(d.custo) || 0;
+    const s = Number(d.sugestaoVenda) || 0;
+    setCusto((prev) => (prev.trim() ? prev : moneyInput(c)));
+    setSugestaoVenda((prev) => (prev.trim() ? prev : moneyInput(s)));
+    setHintDefaults(
+      `Pré-preenchido com custo/sugestão de outros lançamentos com o mesmo nome. Confirme ao registrar.`
+    );
+  }
 
   async function onFotoLancamento(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -68,6 +101,32 @@ export default function EntregaUnikPage() {
     }
   }
 
+  async function criarCategoriaAgora() {
+    const n = novaCategoria.trim();
+    if (!n) {
+      setErro("Informe o nome da nova categoria.");
+      return;
+    }
+    setErro("");
+    const res = await fetch("/api/unik", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ acao: "criar-categoria", nome: n }),
+    });
+    const dataRes = await res.json();
+    if (!res.ok) {
+      setErro(dataRes.error || "Falha ao criar categoria");
+      return;
+    }
+    const nomeCriado = String(dataRes.nome || n);
+    setCategorias((prev) =>
+      prev.includes(nomeCriado) ? prev : [...prev, nomeCriado].sort((a, b) => a.localeCompare(b, "pt-BR"))
+    );
+    setCategoria(nomeCriado);
+    setNovaCategoria("");
+    setMsg(dataRes.message || `Categoria “${nomeCriado}” pronta.`);
+  }
+
   async function lancar() {
     await run(async () => {
       setErro("");
@@ -75,6 +134,20 @@ export default function EntregaUnikPage() {
       if (!nome.trim()) {
         setErro("Informe o nome como veio da UNIK.");
         return;
+      }
+      let cat = categoria.trim();
+      if (!cat && novaCategoria.trim()) {
+        const resCat = await fetch("/api/unik", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ acao: "criar-categoria", nome: novaCategoria.trim() }),
+        });
+        const dataCat = await resCat.json();
+        if (!resCat.ok) {
+          setErro(dataCat.error || "Falha ao criar categoria");
+          return;
+        }
+        cat = String(dataCat.nome || novaCategoria.trim());
       }
       const res = await fetch("/api/unik", {
         method: "POST",
@@ -89,6 +162,7 @@ export default function EntregaUnikPage() {
           custo,
           sugestaoVenda,
           recebidoPor,
+          categoria: cat,
         }),
       });
       const dataRes = await res.json();
@@ -101,6 +175,8 @@ export default function EntregaUnikPage() {
       setFotoUrl("");
       setCusto("");
       setSugestaoVenda("");
+      setHintDefaults("");
+      setNovaCategoria("");
       carregarLancamentos();
     });
   }
@@ -108,7 +184,7 @@ export default function EntregaUnikPage() {
   return (
     <AppShell title="UNIK · Lançar">
       <p className="muted">
-        Só para registrar o lançamento. Para alterar quem recebeu, custo, sugestão, foto ou excluir, use{" "}
+        Só para registrar o lançamento. Para alterar quem recebeu, custo, sugestão, foto, categoria ou excluir, use{" "}
         <Link href="/unik-editar-lancamento">Edição lançamento</Link>.
       </p>
 
@@ -120,9 +196,14 @@ export default function EntregaUnikPage() {
               <label>Nome UNIK</label>
               <input
                 value={nome}
-                onChange={(e) => setNome(e.target.value)}
+                onChange={(e) => {
+                  setNome(e.target.value);
+                  setHintDefaults("");
+                }}
+                onBlur={() => void puxarDefaultsPorNome(nome)}
                 placeholder="Nome como veio na entrega"
               />
+              {hintDefaults ? <p className="muted">{hintDefaults}</p> : null}
             </div>
             <div className="field">
               <label>Quem recebeu</label>
@@ -131,6 +212,31 @@ export default function EntregaUnikPage() {
                 onChange={(e) => setRecebidoPor(e.target.value)}
                 placeholder="Nome de quem recebeu"
               />
+            </div>
+            <div className="field">
+              <label>Categoria UNIK</label>
+              <select value={categoria} onChange={(e) => setCategoria(e.target.value)}>
+                <option value="">Sem categoria</option>
+                {categorias.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="field">
+              <label>Nova categoria (só UNIK)</label>
+              <div className="btn-row">
+                <input
+                  value={novaCategoria}
+                  onChange={(e) => setNovaCategoria(e.target.value)}
+                  placeholder="Ex.: Chaveiros"
+                  style={{ flex: 1 }}
+                />
+                <button type="button" className="btn btn-secondary" onClick={() => void criarCategoriaAgora()}>
+                  Criar
+                </button>
+              </div>
             </div>
             <div className="field">
               <label>Unidade</label>
@@ -164,7 +270,7 @@ export default function EntregaUnikPage() {
               <p className="muted">
                 {status === "Encomenda"
                   ? "Opcional na encomenda: custo total que a 60 paga à UNIK (entra no gráfico Encomenda 60). Sem custo o gráfico fica em R$ 0."
-                  : "Se deixar vazio, o custo fica 0."}
+                  : "Se deixar vazio, o custo fica 0. Com o mesmo nome de outro lançamento, preenche sozinho ao sair do campo nome."}
               </p>
             </div>
             <div className="field">
@@ -219,6 +325,7 @@ export default function EntregaUnikPage() {
               <th>Data</th>
               <th>Unidade</th>
               <th>Status</th>
+              <th>Categoria</th>
               <th>Nome UNIK</th>
               <th>Quem recebeu</th>
               <th className="num">Custo</th>
@@ -229,7 +336,7 @@ export default function EntregaUnikPage() {
           <tbody>
             {lancamentos.length === 0 ? (
               <tr>
-                <td colSpan={9} className="muted">
+                <td colSpan={10} className="muted">
                   Nenhum lançamento nesta data.
                 </td>
               </tr>
@@ -240,6 +347,7 @@ export default function EntregaUnikPage() {
                   <td>{m.dataFmt}</td>
                   <td>{m.unidade || "—"}</td>
                   <td>{m.status || m.tipo}</td>
+                  <td>{m.categoria || "—"}</td>
                   <td>
                     {m.nomeEntrega}
                     {m.descricaoItem ? (

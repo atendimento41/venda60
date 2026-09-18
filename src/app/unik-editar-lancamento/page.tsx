@@ -19,6 +19,7 @@ type Mov = {
   custo?: number;
   sugestaoVenda?: number;
   recebidoPor?: string;
+  categoria?: string;
 };
 
 function moneyInput(n: number | undefined) {
@@ -34,12 +35,14 @@ function ehEncomenda(m: Mov) {
 
 export default function EditarLancamentoUnikPage() {
   const [lista, setLista] = useState<Mov[]>([]);
+  const [categorias, setCategorias] = useState<string[]>([]);
   const [erro, setErro] = useState("");
   const [msg, setMsg] = useState("");
   const [busca, setBusca] = useState("");
   const [buscaItem, setBuscaItem] = useState("");
   const [filtroCusto, setFiltroCusto] = useState("");
   const [filtroSugestao, setFiltroSugestao] = useState("");
+  const [filtroCategoria, setFiltroCategoria] = useState("");
   const [editId, setEditId] = useState(0);
   const [form, setForm] = useState({
     custo: "",
@@ -48,7 +51,10 @@ export default function EditarLancamentoUnikPage() {
     fotoUrl: "",
     quantidade: "1",
     encomenda: false,
+    categoria: "",
   });
+  const [hintDefaults, setHintDefaults] = useState("");
+  const [novaCategoria, setNovaCategoria] = useState("");
   const [salvando, setSalvando] = useState("");
   const [sel, setSel] = useState<Set<number>>(new Set());
   const [lote, setLote] = useState({
@@ -60,18 +66,26 @@ export default function EditarLancamentoUnikPage() {
     recebidoPor: "",
   });
 
-  async function carregar(custoF = filtroCusto, sugestaoF = filtroSugestao, nomeF = busca, itemF = buscaItem) {
+  async function carregar(
+    custoF = filtroCusto,
+    sugestaoF = filtroSugestao,
+    nomeF = busca,
+    itemF = buscaItem,
+    catF = filtroCategoria
+  ) {
     const q = new URLSearchParams({ tipo: "lancamentos", todos: "1" });
     if (custoF) q.set("custo", custoF);
     if (sugestaoF) q.set("sugestao", sugestaoF);
     if (nomeF.trim()) q.set("nome", nomeF.trim());
     if (itemF.trim()) q.set("item", itemF.trim());
+    if (catF.trim()) q.set("categoria", catF.trim());
     const d = await fetch(`/api/unik?${q}`).then((r) => r.json());
     if (d?.error) {
       setErro(d.error);
       return;
     }
     setLista(asArray(d.lancamentos) as Mov[]);
+    if (Array.isArray(d.categorias)) setCategorias(d.categorias as string[]);
     setSel(new Set());
   }
 
@@ -96,16 +110,37 @@ export default function EditarLancamentoUnikPage() {
     else setSel(new Set(idsVisiveis));
   }
 
-  function abrir(m: Mov) {
+  async function abrir(m: Mov) {
+    const fotoSoLancamento = m.fotoLancamento || "";
+    let custo = moneyInput(m.custo);
+    let sugestao = moneyInput(m.sugestaoVenda);
+    let hint = "";
+    if (!(Number(m.custo) > 0) || !(Number(m.sugestaoVenda) > 0)) {
+      const d = await fetch(
+        `/api/unik?tipo=defaults-nome&nome=${encodeURIComponent(m.nomeEntrega || "")}`
+      ).then((r) => r.json());
+      if (d?.encontrou) {
+        if (!(Number(m.custo) > 0) && Number(d.custo) > 0) custo = moneyInput(d.custo);
+        if (!(Number(m.sugestaoVenda) > 0) && Number(d.sugestaoVenda) > 0) {
+          sugestao = moneyInput(d.sugestaoVenda);
+        }
+        if (custo !== moneyInput(m.custo) || sugestao !== moneyInput(m.sugestaoVenda)) {
+          hint = "Valores sugeridos de outro lançamento com o mesmo nome — confirme ao salvar.";
+        }
+      }
+    }
     setEditId(m.id);
     setForm({
-      custo: moneyInput(m.custo),
-      sugestao: moneyInput(m.sugestaoVenda),
+      custo,
+      sugestao,
       recebidoPor: m.recebidoPor || "",
-      fotoUrl: m.fotoLancamento || m.fotoUrl || "",
+      fotoUrl: fotoSoLancamento,
       quantidade: String(m.quantidade || 1),
       encomenda: ehEncomenda(m),
+      categoria: m.categoria || "",
     });
+    setNovaCategoria("");
+    setHintDefaults(hint);
     setErro("");
     setMsg("");
   }
@@ -127,6 +162,21 @@ export default function EditarLancamentoUnikPage() {
     setErro("");
     setMsg("");
     setSalvando(`s:${m.id}`);
+    let cat = form.categoria.trim();
+    if (!cat && novaCategoria.trim()) {
+      const resCat = await fetch("/api/unik", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ acao: "criar-categoria", nome: novaCategoria.trim() }),
+      });
+      const dataCat = await resCat.json();
+      if (!resCat.ok) {
+        setSalvando("");
+        setErro(dataCat.error || "Falha ao criar categoria");
+        return;
+      }
+      cat = String(dataCat.nome || novaCategoria.trim());
+    }
     const res = await fetch("/api/unik", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -139,6 +189,7 @@ export default function EditarLancamentoUnikPage() {
         fotoUrl: form.fotoUrl,
         quantidade: form.quantidade,
         encomenda: form.encomenda,
+        categoria: cat,
       }),
     });
     const dataRes = await res.json();
@@ -149,6 +200,7 @@ export default function EditarLancamentoUnikPage() {
     }
     setMsg(dataRes.message);
     setEditId(0);
+    setHintDefaults("");
     carregar();
   }
 
@@ -222,7 +274,7 @@ export default function EditarLancamentoUnikPage() {
   return (
     <AppShell title="UNIK · Edição lançamento">
       <p className="muted">
-        Edite um a um (quantidade, foto, encomenda…) ou selecione vários e aplique em lote só{" "}
+        Edite um a um (quantidade, foto, categoria, encomenda…) ou selecione vários e aplique em lote só{" "}
         <strong>custo UNIK</strong>, <strong>sugestão de preço</strong> e/ou <strong>quem recebeu</strong>.
       </p>
 
@@ -250,13 +302,31 @@ export default function EditarLancamentoUnikPage() {
           />
         </div>
         <div className="field">
+          <label>Categoria UNIK</label>
+          <select
+            value={filtroCategoria}
+            onChange={(e) => {
+              const v = e.target.value;
+              setFiltroCategoria(v);
+              carregar(filtroCusto, filtroSugestao, busca, buscaItem, v);
+            }}
+          >
+            <option value="">Todas</option>
+            {categorias.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="field">
           <label>Custo</label>
           <select
             value={filtroCusto}
             onChange={(e) => {
               const v = e.target.value;
               setFiltroCusto(v);
-              carregar(v, filtroSugestao, busca);
+              carregar(v, filtroSugestao, busca, buscaItem, filtroCategoria);
             }}
           >
             <option value="">Todos</option>
@@ -270,7 +340,7 @@ export default function EditarLancamentoUnikPage() {
             onChange={(e) => {
               const v = e.target.value;
               setFiltroSugestao(v);
-              carregar(filtroCusto, v, busca);
+              carregar(filtroCusto, v, busca, buscaItem, filtroCategoria);
             }}
           >
             <option value="">Todas</option>
@@ -368,13 +438,14 @@ export default function EditarLancamentoUnikPage() {
         lista.map((m) => {
           const aberto = editId === m.id;
           const enc = ehEncomenda(m);
+          const thumb = m.fotoLancamento || "";
           return (
             <section key={m.id} className="dash-card" style={{ marginBottom: 12 }}>
               <div className="btn-row" style={{ alignItems: "flex-start" }}>
                 <label className="check-inline" style={{ marginTop: 8 }}>
                   <input type="checkbox" checked={sel.has(m.id)} onChange={() => toggleSel(m.id)} />
                 </label>
-                {m.fotoUrl ? <img className="foto-thumb" src={m.fotoUrl} alt="" /> : null}
+                {thumb ? <img className="foto-thumb" src={thumb} alt="" /> : null}
                 <div style={{ flex: 1 }}>
                   <h2 style={{ margin: 0 }}>
                     {m.nomeEntrega}
@@ -387,6 +458,7 @@ export default function EditarLancamentoUnikPage() {
                   </h2>
                   <p className="muted" style={{ margin: "6px 0 0" }}>
                     {m.dataFmt} · {m.unidade || "—"} · {m.status || m.tipo} · Qtd {m.quantidade}
+                    {m.categoria ? ` · ${m.categoria}` : " · Sem categoria"}
                     {m.descricaoItem ? ` · ${m.descricaoItem}` : ""}
                     {` · Custo R$ ${formatMoeda(m.custo || 0)}`}
                     {` · Sugestão R$ ${formatMoeda(m.sugestaoVenda || 0)}`}
@@ -396,7 +468,7 @@ export default function EditarLancamentoUnikPage() {
                 <button
                   type="button"
                   className={aberto ? "btn btn-secondary" : "btn"}
-                  onClick={() => (aberto ? setEditId(0) : abrir(m))}
+                  onClick={() => (aberto ? setEditId(0) : void abrir(m))}
                 >
                   {aberto ? "Fechar" : "Editar"}
                 </button>
@@ -404,6 +476,7 @@ export default function EditarLancamentoUnikPage() {
 
               {aberto && (
                 <>
+                  {hintDefaults ? <p className="muted">{hintDefaults}</p> : null}
                   <div className="filters" style={{ marginTop: 12 }}>
                     <div className="field">
                       <label>Quantidade</label>
@@ -421,6 +494,28 @@ export default function EditarLancamentoUnikPage() {
                         value={form.recebidoPor}
                         onChange={(e) => setForm((f) => ({ ...f, recebidoPor: e.target.value }))}
                         placeholder="Nome de quem recebeu"
+                      />
+                    </div>
+                    <div className="field">
+                      <label>Categoria UNIK</label>
+                      <select
+                        value={form.categoria}
+                        onChange={(e) => setForm((f) => ({ ...f, categoria: e.target.value }))}
+                      >
+                        <option value="">Sem categoria</option>
+                        {categorias.map((c) => (
+                          <option key={c} value={c}>
+                            {c}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="field">
+                      <label>Nova categoria</label>
+                      <input
+                        value={novaCategoria}
+                        onChange={(e) => setNovaCategoria(e.target.value)}
+                        placeholder="Criar e usar ao salvar"
                       />
                     </div>
                     <div className="field">
@@ -464,8 +559,11 @@ export default function EditarLancamentoUnikPage() {
                     </p>
                   ) : null}
                   <div className="field">
-                    <label>Foto</label>
+                    <label>Foto do lançamento</label>
                     <input type="file" accept="image/*" onChange={onFoto} />
+                    <p className="muted" style={{ fontSize: 12 }}>
+                      Remover e salvar limpa só a foto deste lançamento (não volta a do item).
+                    </p>
                   </div>
                   {form.fotoUrl ? (
                     <div className="foto-preview">
@@ -480,13 +578,13 @@ export default function EditarLancamentoUnikPage() {
                     </div>
                   ) : null}
                   <div className="btn-row" style={{ marginTop: 12 }}>
-                    <button className="btn" disabled={salvando === `s:${m.id}`} onClick={() => salvar(m)}>
+                    <button className="btn" disabled={salvando === `s:${m.id}`} onClick={() => void salvar(m)}>
                       {salvando === `s:${m.id}` ? "…" : "Salvar"}
                     </button>
                     <button
                       className="btn btn-secondary"
                       disabled={salvando === `d:${m.id}`}
-                      onClick={() => excluir(m)}
+                      onClick={() => void excluir(m)}
                     >
                       {salvando === `d:${m.id}` ? "…" : "Excluir lançamento"}
                     </button>

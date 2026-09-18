@@ -9,6 +9,9 @@ import {
   desvincularNomeUnik,
   listarItensParaUnik,
   listarLancamentosUnik,
+  listarCategoriasUnik,
+  defaultsCustoSugestaoPorNomeUnik,
+  criarCategoriaUnik,
   atualizarLancamentoUnik,
   atualizarLancamentosUnikLote,
   excluirLancamentoUnik,
@@ -45,8 +48,15 @@ export async function GET(req: Request) {
           todos: searchParams.get("todos") === "1",
           nome: searchParams.get("nome") || undefined,
           item: searchParams.get("item") || undefined,
+          categoria: searchParams.get("categoria") || undefined,
         })
       );
+    }
+    if (tipo === "categorias") {
+      return NextResponse.json({ categorias: await listarCategoriasUnik() });
+    }
+    if (tipo === "defaults-nome") {
+      return NextResponse.json(await defaultsCustoSugestaoPorNomeUnik(searchParams.get("nome") || ""));
     }
     if (tipo === "pendentes") {
       return NextResponse.json(
@@ -135,6 +145,9 @@ export async function POST(req: Request) {
     }
     if (body?.acao === "desvincular") {
       return NextResponse.json(await desvincularNomeUnik(body.nome));
+    }
+    if (body?.acao === "criar-categoria") {
+      return NextResponse.json(await criarCategoriaUnik(body.nome));
     }
     if (body?.acao === "editar-lancamento") {
       return NextResponse.json(await atualizarLancamentoUnik(body));
