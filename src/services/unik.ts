@@ -1986,6 +1986,96 @@ export async function getUnikDashboardMes(filtros: {
   };
 }
 
+function csvCelula(v: unknown): string {
+  const s = String(v ?? "");
+  if (/[;"\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+function csvNumero(n: number | null | undefined): string {
+  if (n == null || Number.isNaN(Number(n))) return "";
+  return Number(n).toFixed(2).replace(".", ",");
+}
+
+/** CSV detalhado do Dashboard mês (período + unidade do filtro). */
+export async function exportarUnikDashboardMesCsv(filtros: {
+  mesInicio?: string;
+  mesFim?: string;
+  mes?: string;
+  unidade?: string;
+}): Promise<{ filename: string; csv: string; linhas: number }> {
+  const fimYm = filtros.mesFim || filtros.mes || mesAtualISO();
+  const inicioYm = filtros.mesInicio || UNIK_MES_INICIO_DADOS;
+  const a = inicioYm <= fimYm ? inicioYm : fimYm;
+  const b = inicioYm <= fimYm ? fimYm : inicioYm;
+  const { inicio } = parseMesFiltro(a);
+  const { fim } = parseMesFiltro(b);
+
+  const todas = await listarVendasUnik60Store({
+    inicio,
+    fim,
+    unidade: filtros.unidade,
+  });
+  const { vendas, encomendas } = partirVendasEncomenda(todas);
+
+  const header = [
+    "Data",
+    "Unidade",
+    "SKU",
+    "Nome",
+    "Preço",
+    "Qt",
+    "Valor custo 60",
+    "Valor custo UNIK",
+    "Valor venda",
+    "Total venda",
+    "Total repasse UNIK",
+    "Total repasse 60",
+    "Tipo",
+  ];
+
+  const linhasCsv: string[] = [header.map(csvCelula).join(";")];
+
+  function empurrar(l: LinhaVendaUnik, tipo: string) {
+    linhasCsv.push(
+      [
+        csvCelula(l.dataFmt || l.data),
+        csvCelula(l.unidade || ""),
+        csvCelula(l.sku || ""),
+        csvCelula(l.descricao || ""),
+        csvNumero(l.valorVenda),
+        csvCelula(l.quantidade),
+        csvNumero(l.custo60),
+        csvNumero(l.custoUnik),
+        csvNumero(l.valorVenda),
+        csvNumero(l.totalVendido),
+        csvNumero(l.lucroUnik),
+        csvNumero(l.lucro60),
+        csvCelula(tipo),
+      ].join(";")
+    );
+  }
+
+  for (const l of vendas) empurrar(l, "Venda");
+  for (const l of encomendas) empurrar(l, "Encomenda");
+
+  const uni = normalizeText(filtros.unidade) || "todas";
+  const filename = `unik-dashboard-mes_${a}_${b}_${uni.replace(/\s+/g, "-")}.csv`;
+
+  await registrarLog(
+    LOG_TIPO.CONSULTA_UNIK,
+    { mesInicio: a, mesFim: b, unidade: filtros.unidade || "", n: vendas.length + encomendas.length },
+    true,
+    "Export CSV Dashboard UNIK mes"
+  );
+
+  return {
+    filename,
+    csv: `\uFEFF${linhasCsv.join("\r\n")}\r\n`,
+    linhas: vendas.length + encomendas.length,
+  };
+}
+
 function qtdArred(n: number) {
   const v = Number((Number(n) || 0).toFixed(4));
   return Math.abs(v) < 1e-9 ? 0 : v;

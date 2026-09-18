@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import AppShell from "@/components/AppShell";
 import BarChart, { TrendChart } from "@/components/BarChart";
 import ExportPdfButton from "@/components/ExportPdfButton";
-import { KpiCard, KpiGrid } from "@/components/KpiCard";import { formatMoeda, mesAtualISO, UNIK_MES_INICIO_DADOS, UNIDADES } from "@/lib/client";
+import { KpiCard, KpiGrid } from "@/components/KpiCard";
+import { formatMoeda, mesAtualISO, UNIK_MES_INICIO_DADOS, UNIDADES } from "@/lib/client";
 
 type TopItem = {
   sku: string;
@@ -50,13 +51,18 @@ export default function UnikDashMesPage() {
   const [encomendasQtd, setEncomendasQtd] = useState(0);
   const [erro, setErro] = useState("");
   const [carregando, setCarregando] = useState(false);
+  const [exportando, setExportando] = useState(false);
+
+  function queryFiltro(extra?: Record<string, string>) {
+    const q = new URLSearchParams({ tipo: "dash-mes", mesInicio, mesFim, ...(extra || {}) });
+    if (unidade) q.set("unidade", unidade);
+    return q;
+  }
 
   async function carregar() {
     setErro("");
     setCarregando(true);
-    const q = new URLSearchParams({ tipo: "dash-mes", mesInicio, mesFim });
-    if (unidade) q.set("unidade", unidade);
-    const d = await fetch(`/api/unik?${q}`).then((r) => r.json());
+    const d = await fetch(`/api/unik?${queryFiltro()}`).then((r) => r.json());
     setCarregando(false);
     if (d?.error) {
       setErro(d.error);
@@ -70,6 +76,33 @@ export default function UnikDashMesPage() {
     setPorMesEncomenda(Array.isArray(d.porMesEncomenda) ? d.porMesEncomenda : []);
     setEncomendasSemCusto(Number(d.encomendasSemCusto) || 0);
     setEncomendasQtd(Number(d.encomendasQtd) || 0);
+  }
+
+  async function exportarCsv() {
+    setErro("");
+    setExportando(true);
+    try {
+      const res = await fetch(`/api/unik?${queryFiltro({ formato: "csv" })}`);
+      if (!res.ok) {
+        const d = await res.json().catch(() => null);
+        setErro(d?.error || "Falha ao exportar CSV");
+        return;
+      }
+      const blob = await res.blob();
+      const cd = res.headers.get("Content-Disposition") || "";
+      const m = /filename="([^"]+)"/.exec(cd);
+      const nome = m?.[1] || `unik-dashboard-mes_${mesInicio}_${mesFim}.csv`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = nome;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Falha ao exportar CSV");
+    } finally {
+      setExportando(false);
+    }
   }
 
   useEffect(() => {
@@ -86,7 +119,7 @@ export default function UnikDashMesPage() {
         Dois mundos diferentes: <strong>Valores UNIK / 60</strong> = vendas UNIK 3D da loja (Meep).{" "}
         <strong>Encomenda 60</strong> = lançamentos com status Encomenda (mesmo cálculo do Relatório
         encomendas: maior entre custo e sugestão × quantidade). Encomenda não entra nos gráficos de
-        venda.
+        venda. O CSV traz todas as linhas detalhadas do período e unidade filtrados.
       </p>
 
       <div className="filters">
@@ -113,6 +146,14 @@ export default function UnikDashMesPage() {
       <div className="btn-row">
         <button className="btn" onClick={carregar} disabled={carregando}>
           {carregando ? "Carregando…" : "Carregar dashboard"}
+        </button>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          onClick={() => void exportarCsv()}
+          disabled={exportando || carregando}
+        >
+          {exportando ? "Exportando…" : "Exportar CSV detalhado"}
         </button>
         <ExportPdfButton
           titulo="UNIK · Dashboard mês"

@@ -3,6 +3,7 @@ import {
   getUnikConciliacao,
   getUnikDashboardDiario,
   getUnikDashboardMes,
+  exportarUnikDashboardMesCsv,
   getUnikRelatorioVendas,
   getUnikRelatorioEncomendas,
   getUnikXItens,
@@ -92,6 +93,21 @@ export async function GET(req: Request) {
       );
     }
     if (tipo === "dash-mes") {
+      if (searchParams.get("formato") === "csv") {
+        const { filename, csv } = await exportarUnikDashboardMesCsv({
+          mesInicio: searchParams.get("mesInicio") || undefined,
+          mesFim: searchParams.get("mesFim") || searchParams.get("mes") || undefined,
+          unidade: searchParams.get("unidade") || undefined,
+        });
+        return new NextResponse(csv, {
+          status: 200,
+          headers: {
+            "Content-Type": "text/csv; charset=utf-8",
+            "Content-Disposition": `attachment; filename="${filename}"`,
+            "Cache-Control": "no-store",
+          },
+        });
+      }
       return NextResponse.json(
         await getUnikDashboardMes({
           mesInicio: searchParams.get("mesInicio") || undefined,
