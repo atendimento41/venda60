@@ -48,7 +48,7 @@ export default function RelatorioPrimePage() {
       <button className="btn" onClick={carregar}>
         Carregar
       </button>
-      {vendas && <VendasPeriodoTable title="Relatório PRIME" linhas={vendas} />}
+      {vendas && <VendasPeriodoTable title="Relatório PRIME" linhas={vendas} modoPrime />}
     </AppShell>
   );
 }

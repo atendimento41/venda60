@@ -125,7 +125,7 @@ export default function PrimePage() {
           <option value="">Selecione</option>
           {itensPrime.map((i) => (
             <option key={i.nome} value={i.nome}>
-              {i.nome}
+              PRIME - {i.nome} (R$ {i.preco.toFixed(2).replace(".", ",")} / ingresso)
             </option>
           ))}
         </select>

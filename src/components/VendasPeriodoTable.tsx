@@ -11,23 +11,46 @@ export type VendaPeriodo = {
   categoria?: string;
   quantidade: number;
   desconto?: number;
+  /** Valor de venda (não comissão). */
   valor: number;
+  /** Comissão do lançamento (ex.: PRIME R$ 1/ingresso). */
+  comissao?: number;
 };
 
 export default function VendasPeriodoTable({
   title = "Vendas do período",
   linhas,
   modo = "detalhado",
+  /** Quando true: coluna "Valor venda", comissão opcional e rodapé de totais de venda. */
+  modoPrime = false,
 }: {
   title?: string;
   linhas: VendaPeriodo[];
   /** detalhado = uma linha por item; simples = já agregado por venda */
   modo?: "detalhado" | "simples";
+  modoPrime?: boolean;
 }) {
   const totalValor = linhas.reduce((s, l) => s + (Number(l.valor) || 0), 0);
   const totalDesconto = linhas.reduce((s, l) => s + (Number(l.desconto) || 0), 0);
+  const totalComissao = linhas.reduce((s, l) => s + (Number(l.comissao) || 0), 0);
+  const temComissao = modoPrime || linhas.some((l) => l.comissao != null);
   const colItem = modo === "simples" ? "Itens" : "Item";
-  const colunas = ["Data/hora", "Vendedor", "Unidade", colItem, "Categoria", "Qtd", "Desconto", "Valor"];
+  const rotuloValor = modoPrime ? "Valor venda" : "Valor";
+  const colunas = [
+    "Data/hora",
+    "Vendedor",
+    "Unidade",
+    colItem,
+    "Categoria",
+    "Qtd",
+    ...(modoPrime ? [] : ["Desconto"]),
+    rotuloValor,
+    ...(temComissao ? ["Comissão"] : []),
+  ];
+
+  const rodape = modoPrime
+    ? `Linhas: ${linhas.length} | Total venda PRIME: R$ ${formatMoeda(totalValor)} | Comissão: R$ ${formatMoeda(totalComissao)}`
+    : `Linhas: ${linhas.length} | Desconto: R$ ${formatMoeda(totalDesconto)} | Total: R$ ${formatMoeda(totalValor)}`;
 
   return (
     <>
@@ -36,24 +59,30 @@ export default function VendasPeriodoTable({
         <ExportPdfButton
           titulo={title}
           colunas={colunas}
-          linhas={linhas.map((l) => [
-            l.dataHora,
-            l.vendedor,
-            l.unidade,
-            l.item,
-            l.categoria || "—",
-            l.quantidade,
-            `R$ ${formatMoeda(l.desconto || 0)}`,
-            `R$ ${formatMoeda(l.valor)}`,
-          ])}
-          rodape={`Linhas: ${linhas.length} | Desconto: R$ ${formatMoeda(totalDesconto)} | Total: R$ ${formatMoeda(totalValor)}`}
+          linhas={linhas.map((l) => {
+            const base = [
+              l.dataHora,
+              l.vendedor,
+              l.unidade,
+              l.item,
+              l.categoria || "—",
+              l.quantidade,
+            ];
+            if (!modoPrime) base.push(`R$ ${formatMoeda(l.desconto || 0)}`);
+            base.push(`R$ ${formatMoeda(l.valor)}`);
+            if (temComissao) base.push(`R$ ${formatMoeda(l.comissao || 0)}`);
+            return base;
+          })}
+          rodape={rodape}
           disabled={linhas.length === 0}
         />
       </div>
       <p className="muted">
-        {modo === "simples"
-          ? "Cada linha é uma venda completa (itens somados)."
-          : "Data e hora em que cada item da venda foi criado."}
+        {modoPrime
+          ? "Valor venda = preço do ingresso × quantidade (ELITE R$ 39,90 · PLATINA R$ 59,90 · OURO R$ 69,90). Comissão = R$ 1,00 por ingresso."
+          : modo === "simples"
+            ? "Cada linha é uma venda completa (itens somados)."
+            : "Data e hora em que cada item da venda foi criado."}
       </p>
       <div style={{ overflowX: "auto" }}>
         <table>
@@ -65,8 +94,9 @@ export default function VendasPeriodoTable({
               <th>{colItem}</th>
               <th>Categoria</th>
               <th className="num">Qtd</th>
-              <th className="num">Desconto</th>
-              <th className="num">Valor</th>
+              {!modoPrime ? <th className="num">Desconto</th> : null}
+              <th className="num">{rotuloValor}</th>
+              {temComissao ? <th className="num">Comissão</th> : null}
             </tr>
           </thead>
           <tbody>
@@ -78,16 +108,19 @@ export default function VendasPeriodoTable({
                 <td>{l.item}</td>
                 <td>{l.categoria || "—"}</td>
                 <td className="num">{l.quantidade}</td>
-                <td className="num">R$ {formatMoeda(l.desconto || 0)}</td>
+                {!modoPrime ? (
+                  <td className="num">R$ {formatMoeda(l.desconto || 0)}</td>
+                ) : null}
                 <td className="num">R$ {formatMoeda(l.valor)}</td>
+                {temComissao ? (
+                  <td className="num">R$ {formatMoeda(l.comissao || 0)}</td>
+                ) : null}
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-      <div className="totals">
-        Linhas: {linhas.length} | Desconto: R$ {formatMoeda(totalDesconto)} | Total: R$ {formatMoeda(totalValor)}
-      </div>
+      <div className="totals">{rodape}</div>
     </>
   );
 }

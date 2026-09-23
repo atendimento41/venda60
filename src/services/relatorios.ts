@@ -23,6 +23,7 @@ import {
   listarVendasNoPeriodo,
 } from "@/lib/vendas-db";
 import { consultarVendasMensalMV, ensureVendasMensalMV } from "@/lib/materialized-views";
+import { comissaoPrimeQtd, valorVendaPrime } from "@/services/prime";
 
 const CATEGORIA_PRIME = "PRIME";
 
@@ -150,8 +151,8 @@ export async function getRelatorioVendasPorVendedor(filtros?: { unidade?: string
     if (unidadeF && normalizeUpper(row.unidade) !== unidadeF) continue;
     const qt = Number(row.quantidade) || 0;
     if (qt <= 0) continue;
-    const valor = Number(row.valor) || 0;
-    const comPrime = qt * 1.0;
+    const valor = valorVendaPrime(qt, row.nivel || row.item);
+    const comPrime = comissaoPrimeQtd(qt);
     const vendedor = String(row.vendedor || "—");
 
     if (ymd === hoje) {
@@ -281,9 +282,10 @@ export async function getRelatorioFiltrado(filtros: {
     for (const row of filtradasPrime) {
       const v = row.vendedor || "—";
       if (!porVendedor[v]) porVendedor[v] = { vendedor: v, qtd: 0, valorPrime: 0, comissaoPrime: 0 };
+      const valorVenda = valorVendaPrime(row.quantidade, row.nivel || row.item);
       porVendedor[v].qtd += row.quantidade;
-      porVendedor[v].valorPrime += row.valor;
-      porVendedor[v].comissaoPrime += row.quantidade;
+      porVendedor[v].valorPrime += valorVenda;
+      porVendedor[v].comissaoPrime += comissaoPrimeQtd(row.quantidade);
     }
     const vendasLinhas = filtradasPrime
       .slice()
@@ -296,14 +298,18 @@ export async function getRelatorioFiltrado(filtros: {
         sku: "",
         quantidade: row.quantidade,
         desconto: 0,
-        valor: row.valor,
+        valor: valorVendaPrime(row.quantidade, row.nivel || row.item),
+        comissao: comissaoPrimeQtd(row.quantidade),
         categoria: CATEGORIA_PRIME,
         subcategoria: row.nivel || "",
       }));
     return {
       linhas: Object.values(porVendedor),
       vendas: vendasLinhas,
-      totalValorPrime: filtradasPrime.reduce((s, r) => s + r.valor, 0),
+      totalValorPrime: filtradasPrime.reduce(
+        (s, r) => s + valorVendaPrime(r.quantidade, r.nivel || r.item),
+        0
+      ),
       modo: "PRIME",
     };
   }
@@ -739,8 +745,8 @@ async function rankingsMalucaDoMes(mesYm: string, unidade?: string) {
   for (const row of primeMes.rows) {
     if (unidadeF && normalizeUpper(row.unidade) !== unidadeF) continue;
     const nome = normalizeText(row.vendedor) || "—";
-    const valor = Number(row.valor) || 0;
     const qtd = Number(row.quantidade) || 0;
+    const valor = valorVendaPrime(qtd, row.nivel || row.item);
     const ymd = dataYmd(row.data);
     bumpMap(primeMap, nome, valor, qtd);
     bumpConstancia(nome, ymd, valor);
@@ -949,8 +955,8 @@ export async function getRelatorioComissao(filtros: {
     const vendedor = String(row.vendedor || "—");
     const acc = ensure(vendedor);
     acc.qtdPrime += qt;
-    acc.valorPrime += Number(row.valor) || 0;
-    acc.comissaoPrime += qt * 1.0;
+    acc.valorPrime += valorVendaPrime(qt, row.nivel || row.item);
+    acc.comissaoPrime += comissaoPrimeQtd(qt);
   }
 
   const linhas = Object.entries(porVendedor)
@@ -1107,7 +1113,7 @@ export async function getDetalheComissaoVendedor(filtros: {
     if (!dataNoIntervalo(ymd, periodo.inicio, periodo.fim)) continue;
     const qt = Number(row.quantidade) || 0;
     if (qt <= 0) continue;
-    const valor = Number(row.valor) || 0;
+    const valor = valorVendaPrime(qt, row.nivel || row.item);
     linhas.push({
       id: `p-${row.id}`,
       tipo: "prime",
@@ -1120,7 +1126,7 @@ export async function getDetalheComissaoVendedor(filtros: {
       valor,
       bucket: "PRIME",
       bucketRotulo: "PRIME",
-      comissao: Number((qt * 1).toFixed(2)),
+      comissao: comissaoPrimeQtd(qt),
     });
   }
 

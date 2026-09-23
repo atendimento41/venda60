@@ -17,22 +17,49 @@ import {
 } from "@/services/vendedores";
 import { ensurePrimeSchema } from "@/lib/ensure-schema";
 
+/** Preço de venda por ingresso (não confundir com comissão R$ 1/ingresso). */
+export const PRECO_INGRESSO_PRIME: Record<"ELITE" | "PLATINA" | "OURO", number> = {
+  ELITE: 39.9,
+  PLATINA: 59.9,
+  OURO: 69.9,
+};
+
+export const COMISSAO_POR_INGRESSO_PRIME = 1;
+
 const ITENS_PRIME = [
-  { nome: "ELITE", preco: 1 },
-  { nome: "PLATINA", preco: 1 },
-  { nome: "OURO", preco: 1 },
+  { nome: "ELITE", preco: PRECO_INGRESSO_PRIME.ELITE },
+  { nome: "PLATINA", preco: PRECO_INGRESSO_PRIME.PLATINA },
+  { nome: "OURO", preco: PRECO_INGRESSO_PRIME.OURO },
 ];
 
 export function listarItensPrime() {
   return ITENS_PRIME;
 }
 
-export function getNivelPrime(itemNome: string) {
+export function getNivelPrime(itemNome: string): "ELITE" | "PLATINA" | "OURO" | "" {
   const u = normalizeUpper(itemNome);
   if (u.includes("ELITE")) return "ELITE";
   if (u.includes("PLATINA")) return "PLATINA";
   if (u.includes("OURO")) return "OURO";
   return "";
+}
+
+export function precoIngressoPrime(itemOuNivel: string): number {
+  const nivel = getNivelPrime(itemOuNivel);
+  return nivel ? PRECO_INGRESSO_PRIME[nivel] : 0;
+}
+
+/** Valor total de venda (preço do ingresso × qtd), independente da comissão. */
+export function valorVendaPrime(quantidade: number, itemOuNivel: string): number {
+  const qtd = Number(quantidade) || 0;
+  if (qtd <= 0) return 0;
+  return Math.round(precoIngressoPrime(itemOuNivel) * qtd * 100) / 100;
+}
+
+export function comissaoPrimeQtd(quantidade: number): number {
+  const qtd = Number(quantidade) || 0;
+  if (qtd <= 0) return 0;
+  return Math.round(qtd * COMISSAO_POR_INGRESSO_PRIME * 100) / 100;
 }
 
 export async function salvarVendaPrime(
@@ -59,8 +86,8 @@ export async function salvarVendaPrime(
   if (!vendedor.ativo) throw new Error("Vendedor inativo.");
   assertUnidadeDoVendedor(vendedor, unidade);
 
-  const precoItem = ITENS_PRIME.find((i) => normalizeUpper(i.nome) === normalizeUpper(item));
-  const valor = (precoItem?.preco ?? 1) * qtd;
+  const nivel = getNivelPrime(item);
+  const valor = valorVendaPrime(qtd, nivel || item);
 
   await db.insert(primeVendas).values({
     data: agoraISO(),
@@ -70,7 +97,7 @@ export async function salvarVendaPrime(
     item,
     quantidade: qtd,
     valor,
-    nivel: getNivelPrime(item),
+    nivel,
     status: "",
   });
 
@@ -117,9 +144,11 @@ export async function getRelatorioPrimeFiltrado(filtros: {
     if (!porVendedor[v]) {
       porVendedor[v] = { vendedor: v, qtd: 0, valor: 0, comissao: 0, itens: [] };
     }
+    const valorVenda = valorVendaPrime(row.quantidade, row.nivel || row.item);
+    const comissao = comissaoPrimeQtd(row.quantidade);
     porVendedor[v].qtd += row.quantidade;
-    porVendedor[v].valor += row.valor;
-    porVendedor[v].comissao += row.quantidade;
+    porVendedor[v].valor += valorVenda;
+    porVendedor[v].comissao += comissao;
     porVendedor[v].itens.push(row);
   }
 
@@ -127,22 +156,30 @@ export async function getRelatorioPrimeFiltrado(filtros: {
   const vendas = filtradas
     .slice()
     .sort((a, b) => String(b.data).localeCompare(String(a.data)))
-    .map((row) => ({
-      dataHora: formatDataHoraBR(row.data),
-      vendedor: row.vendedor || "—",
-      unidade: row.unidade || "",
-      item: row.item,
-      categoria: row.nivel || getNivelPrime(row.item) || "PRIME",
-      quantidade: row.quantidade,
-      valor: row.valor,
-    }));
+    .map((row) => {
+      const nivel = row.nivel || getNivelPrime(row.item) || "PRIME";
+      return {
+        dataHora: formatDataHoraBR(row.data),
+        vendedor: row.vendedor || "—",
+        unidade: row.unidade || "",
+        item: row.item,
+        categoria: nivel,
+        quantidade: row.quantidade,
+        /** Valor de venda (ingresso × qtd) — não é comissão. */
+        valor: valorVendaPrime(row.quantidade, row.nivel || row.item),
+        comissao: comissaoPrimeQtd(row.quantidade),
+      };
+    });
+  const totalQtd = filtradas.reduce((s, r) => s + r.quantidade, 0);
+  const totalValor = vendas.reduce((s, r) => s + r.valor, 0);
+  const totalComissao = vendas.reduce((s, r) => s + r.comissao, 0);
   return {
     resumo,
     vendas,
     detalhes: filtradas,
-    totalQtd: filtradas.reduce((s, r) => s + r.quantidade, 0),
-    totalValor: filtradas.reduce((s, r) => s + r.valor, 0),
-    totalComissao: filtradas.reduce((s, r) => s + r.quantidade, 0),
+    totalQtd,
+    totalValor,
+    totalComissao,
   };
 }
 
@@ -192,7 +229,7 @@ export async function listarPrimeParaCancelamento(filtros: {
       categoria: "PRIME",
       subcategoria: row.nivel || "",
       quantidade: row.quantidade,
-      valorRecebido: row.valor,
+      valorRecebido: valorVendaPrime(row.quantidade, row.nivel || row.item),
       status: row.status || "",
       canceladoPor: row.canceladoPor || "",
       canceladoEm: row.canceladoEm ? formatDataHoraBR(row.canceladoEm) : "",
