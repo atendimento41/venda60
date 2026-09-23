@@ -37,6 +37,12 @@ export default function RelatorioDetalhadoPage() {
     if (d && !d.error) setVendas(asArray<VendaPeriodo>(d.vendas));
   }
 
+  useEffect(() => {
+    void carregar();
+    // carga inicial do dia atual
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const subs =
     categoria && categorias[categoria]
       ? categorias[categoria]
