@@ -109,7 +109,7 @@ export default function RelatorioDetalhadoPage() {
       <button className="btn" onClick={carregar}>
         Carregar
       </button>
-      {vendas && <VendasPeriodoTable title="Relatório detalhado" linhas={vendas} />}
+      {vendas && <VendasPeriodoTable title="Relatório detalhado" linhas={vendas} modo="detalhado" />}
     </AppShell>
   );
 }

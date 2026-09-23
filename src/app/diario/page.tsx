@@ -5,7 +5,7 @@ import AppShell from "@/components/AppShell";
 import VendasPeriodoTable, { type VendaPeriodo } from "@/components/VendasPeriodoTable";
 import { hojeISO, UNIDADES, asArray } from "@/lib/client";
 
-export default function DiarioPage() {
+export default function RelatorioSimplesPage() {
   const [dataInicio, setDataInicio] = useState(hojeISO());
   const [dataFim, setDataFim] = useState(hojeISO());
   const [unidade, setUnidade] = useState("");
@@ -28,7 +28,7 @@ export default function DiarioPage() {
   }, []);
 
   async function carregar() {
-    const q = new URLSearchParams({ tipo: "detalhado", dataInicio, dataFim });
+    const q = new URLSearchParams({ tipo: "simples", dataInicio, dataFim });
     if (unidade) q.set("unidade", unidade);
     if (vendedor) q.set("vendedor", vendedor);
     if (categoria) q.set("categoria", categoria);
@@ -39,7 +39,6 @@ export default function DiarioPage() {
 
   useEffect(() => {
     void carregar();
-    // carga inicial do dia
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -49,7 +48,7 @@ export default function DiarioPage() {
       : [...new Set(Object.values(categorias).flat())].sort();
 
   return (
-    <AppShell title="Relatório Diário">
+    <AppShell title="Relatório simples">
       <div className="filters">
         <div className="field">
           <label>Início</label>
@@ -115,7 +114,9 @@ export default function DiarioPage() {
       <button className="btn" onClick={carregar}>
         Carregar
       </button>
-      {vendas && <VendasPeriodoTable title="Relatório diário" linhas={vendas} />}
+      {vendas && (
+        <VendasPeriodoTable title="Relatório simples" linhas={vendas} modo="simples" />
+      )}
     </AppShell>
   );
 }

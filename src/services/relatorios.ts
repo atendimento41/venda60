@@ -295,6 +295,7 @@ export async function getRelatorioFiltrado(filtros: {
         item: row.item || row.nivel || "PRIME",
         sku: "",
         quantidade: row.quantidade,
+        desconto: 0,
         valor: row.valor,
         categoria: CATEGORIA_PRIME,
         subcategoria: row.nivel || "",
@@ -378,9 +379,12 @@ export async function getRelatorioFiltrado(filtros: {
       item: row.descricao || row.sku,
       sku: row.sku,
       quantidade: row.quantidade,
+      desconto: Number(row.desconto) || 0,
       valor: row.valorRecebido,
       categoria: row.categoria || "",
       subcategoria: row.subcategoria || "",
+      /** chave de agrupamento da venda (mesmo timestamp + vendedor + unidade) */
+      _chaveVenda: `${row.data}|${normalizeText(row.vendedor || "")}|${normalizeUpper(row.unidade)}`,
     }));
 
   return {
@@ -390,7 +394,8 @@ export async function getRelatorioFiltrado(filtros: {
   };
 }
 
-export async function getVendasDoDia(filtros: {
+/** Relatório simples: uma linha por venda (soma itens), com desconto. */
+export async function getRelatorioSimples(filtros: {
   data?: string;
   dataInicio?: string;
   dataFim?: string;
@@ -409,7 +414,92 @@ export async function getVendasDoDia(filtros: {
     categoria: filtros.categoria,
     subcategoria: filtros.subcategoria,
   });
-  return result.vendas || [];
+
+  const linhasDetalhe = (result.vendas || []) as Array<{
+    dataHora: string;
+    vendedor: string;
+    unidade: string;
+    item: string;
+    quantidade: number;
+    desconto?: number;
+    valor: number;
+    categoria?: string;
+    _chaveVenda?: string;
+  }>;
+
+  const grupos: Record<
+    string,
+    {
+      dataHora: string;
+      vendedor: string;
+      unidade: string;
+      itens: string[];
+      categorias: Set<string>;
+      quantidade: number;
+      desconto: number;
+      valor: number;
+    }
+  > = {};
+
+  for (const row of linhasDetalhe) {
+    const chave =
+      row._chaveVenda ||
+      `${row.dataHora}|${normalizeText(row.vendedor)}|${normalizeUpper(row.unidade)}`;
+    if (!grupos[chave]) {
+      grupos[chave] = {
+        dataHora: row.dataHora,
+        vendedor: row.vendedor,
+        unidade: row.unidade,
+        itens: [],
+        categorias: new Set(),
+        quantidade: 0,
+        desconto: 0,
+        valor: 0,
+      };
+    }
+    const g = grupos[chave];
+    const nomeItem = (row.item || "").trim();
+    if (nomeItem && !g.itens.includes(nomeItem)) g.itens.push(nomeItem);
+    if (row.categoria) g.categorias.add(row.categoria);
+    g.quantidade += Number(row.quantidade) || 0;
+    g.desconto += Number(row.desconto) || 0;
+    g.valor += Number(row.valor) || 0;
+  }
+
+  const vendas = Object.values(grupos)
+    .sort((a, b) => b.dataHora.localeCompare(a.dataHora))
+    .map((g) => {
+      const cats = [...g.categorias];
+      const itemResumo =
+        g.itens.length <= 2
+          ? g.itens.join(", ") || "—"
+          : `${g.itens.slice(0, 2).join(", ")} +${g.itens.length - 2}`;
+      return {
+        dataHora: g.dataHora,
+        vendedor: g.vendedor,
+        unidade: g.unidade,
+        item: itemResumo,
+        quantidade: g.quantidade,
+        desconto: Math.round(g.desconto * 100) / 100,
+        valor: Math.round(g.valor * 100) / 100,
+        categoria: cats.length === 1 ? cats[0] : cats.length > 1 ? "Várias" : "—",
+      };
+    });
+
+  return { vendas, modo: "SIMPLES" as const };
+}
+
+export async function getVendasDoDia(filtros: {
+  data?: string;
+  dataInicio?: string;
+  dataFim?: string;
+  unidade?: string;
+  vendedor?: string;
+  categoria?: string;
+  subcategoria?: string;
+}) {
+  const result = await getRelatorioSimples(filtros);
+  return result.vendas;
 }
 
 export async function listarCategoriasRelatorio() {

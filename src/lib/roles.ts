@@ -12,7 +12,7 @@ export const NAV_LINKS: { href: string; label: string }[] = [
   { href: "/estoque", label: "Estoque" },
   { href: "/relatorio-detalhado", label: "Relatório detalhado" },
   { href: "/relatorio-prime", label: "Relatório PRIME" },
-  { href: "/diario", label: "Diário" },
+  { href: "/diario", label: "Relatório simples" },
   { href: "/entrega-unik", label: "Lançar" },
   { href: "/unik-editar-lancamento", label: "Edição lançamento" },
   { href: "/unik-vincular", label: "Vincular" },

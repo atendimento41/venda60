@@ -4,9 +4,9 @@ import {
   getRelatorioComissao,
   getRelatorioFiltrado,
   getRelatorioSaidasMensal,
+  getRelatorioSimples,
   getRelatorioVendasPorVendedor,
   getVendaMalucaMesPassado,
-  getVendasDoDia,
   listarCategoriasRelatorio,
   listarVendedoresNomes,
 } from "@/services/relatorios";
@@ -39,9 +39,9 @@ export async function GET(req: Request) {
         })
       );
     }
-    if (tipo === "diario") {
+    if (tipo === "diario" || tipo === "simples") {
       return NextResponse.json(
-        await getVendasDoDia({
+        await getRelatorioSimples({
           data: searchParams.get("data") || undefined,
           dataInicio: searchParams.get("dataInicio") || undefined,
           dataFim: searchParams.get("dataFim") || undefined,
