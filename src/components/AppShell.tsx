@@ -94,8 +94,8 @@ export default function AppShell({
           } catch {
             /* ignore */
           }
-          router.push("/login?motivo=sessao");
-          router.refresh();
+          // Cookie já é limpo pela própria /api/auth/me (Set-Cookie logout).
+          window.location.assign("/login?motivo=sessao");
           return null;
         }
         return r.json();

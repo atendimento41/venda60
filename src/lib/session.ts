@@ -77,7 +77,8 @@ export function cookieSessao(token: string): string {
 }
 
 export function cookieLogout(): string {
-  return `${COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`;
+  const secure = process.env.VERCEL ? " Secure;" : "";
+  return `${COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0;${secure}`;
 }
 
 export function nomeCookieSessao(): string {

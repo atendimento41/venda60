@@ -6,20 +6,28 @@ import { lerSsoToken } from "@/lib/sso";
 import { ensureUsuariosTable } from "@/lib/ensure-usuarios";
 import { parseUnidadesJson } from "@/services/vendedores";
 
-async function dadosSessaoDb(userId: number): Promise<{ sv: number; unidades: string[] | null }> {
+async function dadosSessaoDb(
+  userId: number,
+): Promise<{ ok: true; sv: number; unidades: string[] | null } | { ok: false }> {
   try {
     await ensureUsuariosTable();
     const rs = await getClient().execute({
-      sql: "SELECT sessao_ver, unidades FROM usuarios WHERE id = ? LIMIT 1",
+      sql: "SELECT sessao_ver, unidades, ativo FROM usuarios WHERE id = ? LIMIT 1",
       args: [userId],
     });
-    const row = rs.rows?.[0] as { sessao_ver?: number; unidades?: string } | undefined;
+    const row = rs.rows?.[0] as
+      | { sessao_ver?: number; unidades?: string; ativo?: boolean | number }
+      | undefined;
+    if (!row) return { ok: false };
+    const ativo = row.ativo === true || row.ativo === 1;
+    if (!ativo) return { ok: false };
     return {
-      sv: Number(row?.sessao_ver) || 1,
-      unidades: row?.unidades != null ? parseUnidadesJson(row.unidades) : null,
+      ok: true,
+      sv: Number(row.sessao_ver) || 1,
+      unidades: row.unidades != null ? parseUnidadesJson(row.unidades) : null,
     };
   } catch {
-    return { sv: 1, unidades: null };
+    return { ok: false };
   }
 }
 
@@ -37,6 +45,9 @@ export async function GET(req: Request) {
   }
 
   const db = await dadosSessaoDb(payload.sub);
+  if (!db.ok) {
+    return NextResponse.redirect(new URL("/login?erro=sso", req.url));
+  }
 
   const sessao = await criarTokenSessao({
     id: payload.sub,
