@@ -1,13 +1,15 @@
-import { db } from "@/db";
+import { db, getClient } from "@/db";
 import { primeVendas } from "@/db/schema";
 import { desc, eq } from "drizzle-orm";
 import {
   agoraISO,
   dataYmd,
   formatDataHoraBR,
+  hojeISO,
   isVendaCancelada,
   normalizeText,
   normalizeUpper,
+  normalizarDataVendaISO,
 } from "@/lib/utils";
 import { LOG_TIPO, operadorAtual, registrarLog } from "@/lib/log";
 import {
@@ -268,4 +270,217 @@ export async function cancelarPrime(id: number, motivo: string, operador?: strin
     `PRIME cancelado: ${razao}`
   );
   return { ok: true, message: "Lançamento PRIME cancelado." };
+}
+
+export async function obterUltimoDiaPrime(): Promise<string> {
+  await ensurePrimeSchema();
+  const client = getClient();
+  const rs = await client.execute({
+    sql: `SELECT MAX(SUBSTRING(data FROM 1 FOR 10)) AS d
+          FROM prime_vendas
+          WHERE COALESCE(UPPER(status), '') != 'CANCELADO'
+            AND data ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'`,
+    args: [],
+  });
+  const d = String(rs.rows[0]?.d || "").trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : hojeISO();
+}
+
+export async function listarPrimeParaEditar(filtros: {
+  nome?: string;
+  unidade?: string;
+  vendedor?: string;
+  dataInicio?: string;
+  dataFim?: string;
+  nivel?: string;
+  /** Se true e sem data, usa o último dia com lançamento. */
+  usarUltimoDia?: boolean;
+}) {
+  await ensurePrimeSchema();
+  let dataInicio = normalizeText(filtros.dataInicio);
+  let dataFim = normalizeText(filtros.dataFim);
+  const ultimoDia = await obterUltimoDiaPrime();
+
+  if (!dataInicio && !dataFim && filtros.usarUltimoDia !== false) {
+    dataInicio = ultimoDia;
+    dataFim = ultimoDia;
+  }
+
+  const nivelF = normalizeUpper(filtros.nivel || "");
+  const nomeF = normalizeUpper(filtros.nome || "");
+  const rows = await db.select().from(primeVendas).orderBy(desc(primeVendas.id)).limit(2000);
+
+  const linhas = rows
+    .filter((row) => {
+      if (!primeAberta(row.status)) return false;
+      const ymd = dataYmd(row.data);
+      if (dataInicio && ymd < dataInicio) return false;
+      if (dataFim && ymd > dataFim) return false;
+      if (filtros.unidade && normalizeUpper(row.unidade) !== normalizeUpper(filtros.unidade))
+        return false;
+      if (filtros.vendedor && normalizeText(row.vendedor) !== normalizeText(filtros.vendedor))
+        return false;
+      const nivel = row.nivel || getNivelPrime(row.item) || "";
+      if (nivelF && normalizeUpper(nivel) !== nivelF) return false;
+      if (nomeF && !normalizeUpper(row.item).includes(nomeF) && !normalizeUpper(nivel).includes(nomeF))
+        return false;
+      return true;
+    })
+    .slice(0, 500)
+    .map((row) => {
+      const raw = String(row.data || "").trim();
+      const m = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})/.exec(raw);
+      const nivel = row.nivel || getNivelPrime(row.item) || "";
+      return {
+        id: row.id,
+        dataHora: formatDataHoraBR(row.data),
+        dataLocal: m ? m[1] : raw.slice(0, 16),
+        idVendedor: String(row.idVendedor || ""),
+        vendedor: row.vendedor || "—",
+        unidade: row.unidade || "",
+        item: row.item,
+        nivel,
+        quantidade: row.quantidade,
+        valorRecebido: valorVendaPrime(row.quantidade, nivel || row.item),
+      };
+    });
+
+  return {
+    linhas,
+    dataPadrao: dataInicio || dataFim || ultimoDia,
+    ultimoDia,
+    total: linhas.length,
+  };
+}
+
+export async function atualizarPrime(
+  input: {
+    id: number;
+    data?: string;
+    idVendedor?: string;
+    vendedor?: string;
+    item?: string;
+    quantidade?: number | string;
+  },
+  operador?: string
+) {
+  await ensurePrimeSchema();
+  const sid = Number(input.id);
+  if (!Number.isFinite(sid) || sid <= 0) throw new Error("Lançamento PRIME inválido.");
+
+  const [row] = await db.select().from(primeVendas).where(eq(primeVendas.id, sid));
+  if (!row) throw new Error("Lançamento PRIME não encontrado.");
+  if (!primeAberta(row.status)) throw new Error("PRIME cancelado não pode ser editado.");
+
+  const patch: Partial<{
+    data: string;
+    idVendedor: string;
+    vendedor: string;
+    item: string;
+    nivel: string;
+    quantidade: number;
+    valor: number;
+  }> = {};
+  const mudancas: Array<{ campo: string; de: string; para: string }> = [];
+
+  if (input.data != null && String(input.data).trim()) {
+    const dataNova = normalizarDataVendaISO(input.data);
+    const de = String(row.data || "");
+    if (dataNova !== de) {
+      patch.data = dataNova;
+      mudancas.push({
+        campo: "data",
+        de: formatDataHoraBR(de),
+        para: formatDataHoraBR(dataNova),
+      });
+    }
+  }
+
+  const querVendedor =
+    (input.idVendedor != null && String(input.idVendedor).trim()) ||
+    (input.vendedor != null && String(input.vendedor).trim());
+  if (querVendedor) {
+    const vend = await obterVendedorPorIdOuNome(input.idVendedor, input.vendedor);
+    if (!vend) throw new Error("Vendedor não encontrado.");
+    if (!vend.ativo) throw new Error("Vendedor inativo.");
+    assertUnidadeDoVendedor(vend, row.unidade || "");
+    const idAnt = String(row.idVendedor || "");
+    const nomeAnt = String(row.vendedor || "");
+    if (vend.id !== idAnt || normalizeText(vend.nome) !== normalizeText(nomeAnt)) {
+      patch.idVendedor = vend.id;
+      patch.vendedor = vend.nome;
+      mudancas.push({
+        campo: "vendedor",
+        de: nomeAnt || "—",
+        para: vend.nome,
+      });
+    }
+  }
+
+  let itemFinal = row.item;
+  let qtdFinal = row.quantidade;
+
+  if (input.item != null && String(input.item).trim()) {
+    const itemNovo = normalizeText(input.item);
+    const nivelNovo = getNivelPrime(itemNovo);
+    if (!nivelNovo) throw new Error("Item PRIME inválido (use ELITE, PLATINA ou OURO).");
+    const itemAnt = String(row.item || "");
+    const nivelAnt = row.nivel || getNivelPrime(itemAnt) || "";
+    if (normalizeUpper(itemNovo) !== normalizeUpper(itemAnt) || nivelNovo !== nivelAnt) {
+      patch.item = itemNovo;
+      patch.nivel = nivelNovo;
+      mudancas.push({
+        campo: "item",
+        de: itemAnt || "—",
+        para: itemNovo,
+      });
+    }
+    itemFinal = itemNovo;
+  }
+
+  if (input.quantidade != null && String(input.quantidade).trim() !== "") {
+    const qtdNova = Math.floor(Number(String(input.quantidade).replace(",", ".")));
+    if (!Number.isFinite(qtdNova) || qtdNova <= 0) throw new Error("Quantidade inválida.");
+    if (qtdNova !== row.quantidade) {
+      patch.quantidade = qtdNova;
+      mudancas.push({
+        campo: "quantidade",
+        de: String(row.quantidade),
+        para: String(qtdNova),
+      });
+    }
+    qtdFinal = qtdNova;
+  }
+
+  const nivelFinal = patch.nivel || row.nivel || getNivelPrime(itemFinal) || itemFinal;
+  const valorNovo = valorVendaPrime(qtdFinal, nivelFinal);
+  const valorAnt = Number(row.valor) || valorVendaPrime(row.quantidade, row.nivel || row.item);
+  if (Math.abs(valorNovo - valorAnt) > 0.0001) {
+    patch.valor = valorNovo;
+    mudancas.push({
+      campo: "valor",
+      de: valorAnt.toFixed(2),
+      para: valorNovo.toFixed(2),
+    });
+  }
+
+  if (!mudancas.length) {
+    return { ok: true, message: "Nenhuma alteração.", mudancas: [] };
+  }
+
+  await db.update(primeVendas).set(patch).where(eq(primeVendas.id, sid));
+
+  const quem = normalizeText(operador) || (await operadorAtual());
+  const resumo = mudancas.map((m) => `${m.campo}: ${m.de} → ${m.para}`).join("; ");
+  await registrarLog(
+    LOG_TIPO.EDICAO_PRIME,
+    { id: sid, operador: quem, mudancas },
+    true,
+    `PRIME #${sid} alterado por ${quem}: ${resumo}`
+  );
+  return {
+    ok: true,
+    message: `PRIME #${sid} atualizado (${mudancas.length} campo(s)).`,
+    mudancas,
+  };
 }
