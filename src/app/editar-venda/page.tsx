@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
+import SolicitacoesPendentesCard from "@/components/SolicitacoesPendentesCard";
 import {
   asArray,
   formatMoeda,
@@ -161,6 +162,10 @@ export default function EditarVendaPage() {
 
   return (
     <AppShell title="Editar venda">
+      <SolicitacoesPendentesCard
+        tipo="VENDA"
+        onDecidido={() => void carregar({ manterData: true })}
+      />
       <section className="card">
         <h2>Editar venda</h2>
         <p className="muted" style={{ marginTop: 0 }}>

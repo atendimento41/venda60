@@ -9,6 +9,7 @@ export const NAV_LINKS: { href: string; label: string }[] = [
   { href: "/cancelamento-vendas", label: "Cancelar venda / PRIME" },
   { href: "/editar-venda", label: "Editar venda" },
   { href: "/editar-prime", label: "Editar PRIME" },
+  { href: "/solicitar-edicao", label: "Solicitar edição" },
   { href: "/ultimos-lancamentos", label: "Últimos lançamentos" },
   { href: "/estoque", label: "Estoque" },
   { href: "/relatorio-detalhado", label: "Relatório detalhado" },
@@ -58,6 +59,7 @@ export const GRUPOS_NAV: { id: string; label: string; hrefs: string[] }[] = [
       "/cancelamento-vendas",
       "/editar-venda",
       "/editar-prime",
+      "/solicitar-edicao",
       "/ultimos-lancamentos",
       "/estoque",
     ],
@@ -196,6 +198,7 @@ export function podeAcessarApi(paginas: PaginasPerm, method: string, pathname: s
         "/editar-venda",
         "/editar-data-venda",
         "/editar-prime",
+        "/solicitar-edicao",
         "/venda-maluca",
         "/vendedores"
       );
@@ -204,15 +207,22 @@ export function podeAcessarApi(paginas: PaginasPerm, method: string, pathname: s
   }
 
   if (pathname.startsWith("/api/vendas/editar") || pathname.startsWith("/api/vendas/data")) {
+    if (m === "GET") return alguma("/editar-venda", "/editar-data-venda", "/solicitar-edicao");
     return alguma("/editar-venda", "/editar-data-venda");
   }
 
   if (pathname.startsWith("/api/prime/editar")) {
+    if (m === "GET") return alguma("/editar-prime", "/solicitar-edicao");
     return tem("/editar-prime");
   }
 
+  if (pathname.startsWith("/api/solicitacoes-edicao")) {
+    return alguma("/solicitar-edicao", "/editar-venda", "/editar-prime", "/editar-data-venda");
+  }
+
   if (pathname.startsWith("/api/vendas")) {
-    if (m === "GET") return alguma("/", "/ultimos-lancamentos", "/editar-venda", "/editar-data-venda");
+    if (m === "GET")
+      return alguma("/", "/ultimos-lancamentos", "/editar-venda", "/editar-data-venda", "/solicitar-edicao");
     return tem("/");
   }
 
@@ -241,7 +251,7 @@ export function podeAcessarApi(paginas: PaginasPerm, method: string, pathname: s
   }
 
   if (pathname.startsWith("/api/prime")) {
-    return alguma("/prime", "/relatorio-prime", "/editar-prime");
+    return alguma("/prime", "/relatorio-prime", "/editar-prime", "/solicitar-edicao");
   }
 
   if (pathname.startsWith("/api/cancelamento")) {

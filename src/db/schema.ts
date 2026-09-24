@@ -100,6 +100,24 @@ export const primeVendas = pgTable("prime_vendas", {
   motivoCancelamento: text("motivo_cancelamento"),
 });
 
+/** Pedidos de edição de venda/PRIME (aprovação). */
+export const solicitacoesEdicao = pgTable("solicitacoes_edicao", {
+  id: integer("id").primaryKey().generatedByDefaultAsIdentity(),
+  tipo: text("tipo").notNull(),
+  registroId: integer("registro_id").notNull(),
+  unidade: text("unidade"),
+  valoresAtual: text("valores_atual").notNull().default("{}"),
+  valoresPropostos: text("valores_propostos").notNull().default("{}"),
+  motivo: text("motivo").notNull(),
+  status: text("status").notNull().default("PENDENTE"),
+  solicitadoPor: text("solicitado_por").notNull(),
+  solicitadoEm: text("solicitado_em").notNull(),
+  decididoPor: text("decidido_por"),
+  decididoEm: text("decidido_em"),
+  obsDecisao: text("obs_decisao"),
+  mudancas: text("mudancas"),
+});
+
 export const logOperacoes = pgTable("log_operacoes", {
   id: integer("id").primaryKey().generatedByDefaultAsIdentity(),
   dataHora: text("data_hora").notNull(),
@@ -179,3 +197,4 @@ export type Item = typeof itens.$inferSelect;
 export type Estoque = typeof estoque.$inferSelect;
 export type Venda = typeof vendas.$inferSelect;
 export type PrimeVenda = typeof primeVendas.$inferSelect;
+export type SolicitacaoEdicao = typeof solicitacoesEdicao.$inferSelect;

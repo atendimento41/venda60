@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
+import SolicitacoesPendentesCard from "@/components/SolicitacoesPendentesCard";
 import {
   asArray,
   formatMoeda,
@@ -179,6 +180,10 @@ export default function EditarPrimePage() {
 
   return (
     <AppShell title="Editar PRIME">
+      <SolicitacoesPendentesCard
+        tipo="PRIME"
+        onDecidido={() => void carregar({ manterData: true })}
+      />
       <section className="card">
         <h2>Editar PRIME</h2>
         <p className="muted" style={{ marginTop: 0 }}>
