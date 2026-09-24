@@ -100,10 +100,12 @@ export const primeVendas = pgTable("prime_vendas", {
   motivoCancelamento: text("motivo_cancelamento"),
 });
 
-/** Pedidos de edição de venda/PRIME (aprovação). */
+/** Pedidos de edição/cancelamento de venda/PRIME (aprovação). */
 export const solicitacoesEdicao = pgTable("solicitacoes_edicao", {
   id: integer("id").primaryKey().generatedByDefaultAsIdentity(),
   tipo: text("tipo").notNull(),
+  /** EDICAO | CANCELAMENTO */
+  acao: text("acao").notNull().default("EDICAO"),
   registroId: integer("registro_id").notNull(),
   unidade: text("unidade"),
   valoresAtual: text("valores_atual").notNull().default("{}"),

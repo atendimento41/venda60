@@ -10,6 +10,7 @@ import {
 } from "@/lib/client";
 
 type TipoAba = "VENDA" | "PRIME";
+type ModoPedido = "EDICAO" | "CANCELAMENTO";
 
 type LinhaVenda = {
   id: number;
@@ -18,6 +19,7 @@ type LinhaVenda = {
   idVendedor: string;
   vendedor: string;
   unidade: string;
+  sku: string;
   item: string;
   categoria: string;
   subcategoria: string;
@@ -39,10 +41,12 @@ type LinhaPrime = {
 };
 
 type ItemPrime = { nome: string; preco: number };
+type ItemLoja = { sku: string; descricao: string; preco: number };
 
 type MinhaSolic = {
   id: number;
   tipo: string;
+  acao?: string;
   registroId: number;
   status: string;
   motivo: string;
@@ -61,6 +65,7 @@ export default function SolicitarEdicaoPage() {
   const [aba, setAba] = useState<TipoAba>("VENDA");
   const [vendedores, setVendedores] = useState<VendedorClient[]>([]);
   const [itensPrime, setItensPrime] = useState<ItemPrime[]>([]);
+  const [itensLoja, setItensLoja] = useState<ItemLoja[]>([]);
   const [unidade, setUnidade] = useState("");
   const [vendedorFiltro, setVendedorFiltro] = useState("");
   const [data, setData] = useState("");
@@ -73,7 +78,15 @@ export default function SolicitarEdicaoPage() {
   const [minhas, setMinhas] = useState<MinhaSolic[]>([]);
   const [ultimoDia, setUltimoDia] = useState("");
   const [editId, setEditId] = useState(0);
-  const [formVenda, setFormVenda] = useState({ dataLocal: "", idVendedor: "", valor: "" });
+  const [modoPedido, setModoPedido] = useState<ModoPedido>("EDICAO");
+  const [unidadeLinha, setUnidadeLinha] = useState("");
+  const [formVenda, setFormVenda] = useState({
+    dataLocal: "",
+    idVendedor: "",
+    sku: "",
+    quantidade: "1",
+    valor: "",
+  });
   const [formPrime, setFormPrime] = useState({
     dataLocal: "",
     idVendedor: "",
@@ -96,6 +109,26 @@ export default function SolicitarEdicaoPage() {
       setItensPrime(asArray(iRes) as ItemPrime[]);
     });
   }, []);
+
+  async function carregarItensUnidade(uni: string) {
+    if (!uni) {
+      setItensLoja([]);
+      return;
+    }
+    const res = await fetch(`/api/vendas?unidade=${encodeURIComponent(uni)}`);
+    const d = await res.json();
+    if (!res.ok) {
+      setItensLoja([]);
+      return;
+    }
+    setItensLoja(
+      asArray(d).map((i: Record<string, unknown>) => ({
+        sku: String(i.sku || ""),
+        descricao: String(i.descricao || i.nome || i.sku || ""),
+        preco: Number(i.preco) || 0,
+      }))
+    );
+  }
 
   const carregarMinhas = useCallback(async () => {
     const res = await fetch(`/api/solicitacoes-edicao?modo=minhas&tipo=${aba}`);
@@ -193,26 +226,33 @@ export default function SolicitarEdicaoPage() {
     return Math.round(item.preco * qtd * 100) / 100;
   }, [itensPrime, formPrime.item, formPrime.quantidade]);
 
-  function abrirVenda(l: LinhaVenda) {
+  async function abrirVenda(l: LinhaVenda, modo: ModoPedido) {
     const vend =
       vendedores.find((v) => v.id === l.idVendedor) ||
       vendedores.find((v) => v.nome === l.vendedor);
+    setModoPedido(modo);
     setEditId(l.id);
+    setUnidadeLinha(l.unidade || "");
     setFormVenda({
       dataLocal: l.dataLocal || "",
       idVendedor: vend?.id || l.idVendedor || "",
+      sku: l.sku || "",
+      quantidade: String(l.quantidade || 1),
       valor: String(Number(l.valorRecebido || 0).toFixed(2)).replace(".", ","),
     });
     setMotivo("");
     setErro("");
     setMsg("");
+    if (modo === "EDICAO") void carregarItensUnidade(l.unidade || "");
   }
 
-  function abrirPrime(l: LinhaPrime) {
+  function abrirPrime(l: LinhaPrime, modo: ModoPedido) {
     const vend =
       vendedores.find((v) => v.id === l.idVendedor) ||
       vendedores.find((v) => v.nome === l.vendedor);
+    setModoPedido(modo);
     setEditId(l.id);
+    setUnidadeLinha(l.unidade || "");
     setFormPrime({
       dataLocal: l.dataLocal || "",
       idVendedor: vend?.id || l.idVendedor || "",
@@ -224,6 +264,18 @@ export default function SolicitarEdicaoPage() {
     setMsg("");
   }
 
+  function onSkuChange(sku: string) {
+    const item = itensLoja.find((i) => i.sku === sku);
+    const qtd = Math.floor(Number(String(formVenda.quantidade).replace(",", "."))) || 1;
+    setFormVenda((f) => ({
+      ...f,
+      sku,
+      valor: item
+        ? String((Math.round(item.preco * qtd * 100) / 100).toFixed(2)).replace(".", ",")
+        : f.valor,
+    }));
+  }
+
   async function enviar() {
     if (!editId) return;
     if (motivo.trim().length < 10) {
@@ -232,25 +284,33 @@ export default function SolicitarEdicaoPage() {
     }
     setSalvando(true);
     setErro("");
-    const body =
-      aba === "VENDA"
-        ? {
-            tipo: "VENDA",
-            registroId: editId,
-            motivo,
-            data: formVenda.dataLocal,
-            idVendedor: formVenda.idVendedor,
-            valorRecebido: formVenda.valor,
-          }
-        : {
-            tipo: "PRIME",
-            registroId: editId,
-            motivo,
-            data: formPrime.dataLocal,
-            idVendedor: formPrime.idVendedor,
-            item: formPrime.item,
-            quantidade: Math.floor(Number(String(formPrime.quantidade).replace(",", "."))),
-          };
+    let body: Record<string, unknown>;
+    if (modoPedido === "CANCELAMENTO") {
+      body = { tipo: aba, acao: "CANCELAMENTO", registroId: editId, motivo };
+    } else if (aba === "VENDA") {
+      body = {
+        tipo: "VENDA",
+        acao: "EDICAO",
+        registroId: editId,
+        motivo,
+        data: formVenda.dataLocal,
+        idVendedor: formVenda.idVendedor,
+        sku: formVenda.sku,
+        quantidade: Math.floor(Number(String(formVenda.quantidade).replace(",", "."))),
+        valorRecebido: formVenda.valor,
+      };
+    } else {
+      body = {
+        tipo: "PRIME",
+        acao: "EDICAO",
+        registroId: editId,
+        motivo,
+        data: formPrime.dataLocal,
+        idVendedor: formPrime.idVendedor,
+        item: formPrime.item,
+        quantidade: Math.floor(Number(String(formPrime.quantidade).replace(",", "."))),
+      };
+    }
     const res = await fetch("/api/solicitacoes-edicao", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -271,10 +331,10 @@ export default function SolicitarEdicaoPage() {
   return (
     <AppShell title="Solicitar edição">
       <section className="card">
-        <h2>Solicitar edição</h2>
+        <h2>Solicitar edição / cancelamento</h2>
         <p className="muted" style={{ marginTop: 0 }}>
-          Monte o pedido de alteração. Quem tem permissão de editar irá aprovar ou recusar. O motivo é
-          obrigatório.
+          Peça alteração (inclui troca de item, com ajuste de estoque na aprovação) ou cancelamento.
+          Quem edita aprova ou recusa. Motivo obrigatório.
           {ultimoDia ? ` · Último dia: ${ultimoDia.split("-").reverse().join("/")}` : ""}
         </p>
         <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
@@ -388,9 +448,16 @@ export default function SolicitarEdicaoPage() {
       {editId > 0 && (
         <section className="card" style={{ marginTop: 16 }}>
           <h3>
-            Solicitar alteração — {aba} #{editId}
+            {modoPedido === "CANCELAMENTO" ? "Solicitar cancelamento" : "Solicitar alteração"} —{" "}
+            {aba} #{editId}
+            {unidadeLinha ? ` · ${unidadeLinha}` : ""}
           </h3>
-          {aba === "VENDA" ? (
+          {modoPedido === "CANCELAMENTO" ? (
+            <p className="muted">
+              Ao aprovar, o lançamento será cancelado
+              {aba === "VENDA" ? " e o estoque devolvido" : ""}.
+            </p>
+          ) : aba === "VENDA" ? (
             <div className="filters">
               <div className="field">
                 <label>Data e hora</label>
@@ -413,6 +480,28 @@ export default function SolicitarEdicaoPage() {
                     </option>
                   ))}
                 </select>
+              </div>
+              <div className="field">
+                <label>Item (SKU)</label>
+                <select value={formVenda.sku} onChange={(e) => onSkuChange(e.target.value)}>
+                  <option value="">Selecione</option>
+                  {itensLoja.map((i) => (
+                    <option key={i.sku} value={i.sku}>
+                      {i.descricao} ({i.sku})
+                    </option>
+                  ))}
+                  {formVenda.sku && !itensLoja.some((i) => i.sku === formVenda.sku) && (
+                    <option value={formVenda.sku}>{formVenda.sku} (atual)</option>
+                  )}
+                </select>
+              </div>
+              <div className="field">
+                <label>Quantidade</label>
+                <input
+                  value={formVenda.quantidade}
+                  onChange={(e) => setFormVenda((f) => ({ ...f, quantidade: e.target.value }))}
+                  inputMode="numeric"
+                />
               </div>
               <div className="field">
                 <label>Valor recebido (R$)</label>
@@ -482,7 +571,7 @@ export default function SolicitarEdicaoPage() {
               onChange={(e) => setMotivo(e.target.value)}
               rows={3}
               style={{ width: "100%" }}
-              placeholder="Por que precisa alterar (mínimo 10 caracteres)"
+              placeholder="Por que precisa alterar/cancelar (mínimo 10 caracteres)"
             />
           </div>
           <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
@@ -490,7 +579,7 @@ export default function SolicitarEdicaoPage() {
               {salvando ? "Enviando…" : "Enviar solicitação"}
             </button>
             <button type="button" className="btn btn-secondary" onClick={() => setEditId(0)}>
-              Cancelar
+              Fechar
             </button>
           </div>
         </section>
@@ -533,16 +622,28 @@ export default function SolicitarEdicaoPage() {
                       <td>{l.dataHora}</td>
                       <td>{l.unidade}</td>
                       <td>{l.vendedor}</td>
-                      <td>{l.item}</td>
+                      <td>
+                        {l.item}
+                        {l.sku ? ` (${l.sku})` : ""}
+                      </td>
                       <td className="num">R$ {formatMoeda(l.valorRecebido || 0)}</td>
                       <td>
-                        <button
-                          type="button"
-                          className="btn btn-secondary"
-                          onClick={() => abrirVenda(l)}
-                        >
-                          Solicitar
-                        </button>
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                          <button
+                            type="button"
+                            className="btn btn-secondary"
+                            onClick={() => void abrirVenda(l, "EDICAO")}
+                          >
+                            Alterar
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-secondary"
+                            onClick={() => void abrirVenda(l, "CANCELAMENTO")}
+                          >
+                            Cancelar
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -581,13 +682,22 @@ export default function SolicitarEdicaoPage() {
                       <td className="num">{l.quantidade}</td>
                       <td className="num">R$ {formatMoeda(l.valorRecebido || 0)}</td>
                       <td>
-                        <button
-                          type="button"
-                          className="btn btn-secondary"
-                          onClick={() => abrirPrime(l)}
-                        >
-                          Solicitar
-                        </button>
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                          <button
+                            type="button"
+                            className="btn btn-secondary"
+                            onClick={() => abrirPrime(l, "EDICAO")}
+                          >
+                            Alterar
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-secondary"
+                            onClick={() => abrirPrime(l, "CANCELAMENTO")}
+                          >
+                            Cancelar
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -605,6 +715,7 @@ export default function SolicitarEdicaoPage() {
             <thead>
               <tr>
                 <th>#</th>
+                <th>Ação</th>
                 <th>Registro</th>
                 <th>Status</th>
                 <th>Quando</th>
@@ -615,7 +726,7 @@ export default function SolicitarEdicaoPage() {
             <tbody>
               {!minhas.length ? (
                 <tr>
-                  <td colSpan={6} className="muted">
+                  <td colSpan={7} className="muted">
                     Nenhuma solicitação neste tipo.
                   </td>
                 </tr>
@@ -623,6 +734,11 @@ export default function SolicitarEdicaoPage() {
                 minhas.map((s) => (
                   <tr key={s.id}>
                     <td>{s.id}</td>
+                    <td>
+                      {String(s.acao || "").toUpperCase() === "CANCELAMENTO"
+                        ? "Cancelamento"
+                        : "Edição"}
+                    </td>
                     <td>
                       {s.tipo} #{s.registroId}
                     </td>

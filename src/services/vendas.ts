@@ -601,6 +601,8 @@ export async function atualizarVenda(
     idVendedor?: string;
     vendedor?: string;
     valorRecebido?: number | string;
+    sku?: string;
+    quantidade?: number | string;
   },
   operador?: string
 ) {
@@ -617,6 +619,13 @@ export async function atualizarVenda(
     vendedor: string;
     valorRecebido: number;
     desconto: number;
+    sku: string;
+    descricao: string;
+    categoria: string;
+    subcategoria: string;
+    precoUnitario: number;
+    quantidade: number;
+    subtotalBruto: number;
   }> = {};
   const mudancas: Array<{ campo: string; de: string; para: string }> = [];
 
@@ -654,13 +663,63 @@ export async function atualizarVenda(
     }
   }
 
+  let qtdFinal = row.quantidade;
+  if (input.quantidade != null && String(input.quantidade).trim() !== "") {
+    const qtdNova = Math.floor(Number(String(input.quantidade).replace(",", ".")));
+    if (!Number.isFinite(qtdNova) || qtdNova <= 0) throw new Error("Quantidade inválida.");
+    if (qtdNova !== row.quantidade) {
+      patch.quantidade = qtdNova;
+      mudancas.push({
+        campo: "quantidade",
+        de: String(row.quantidade),
+        para: String(qtdNova),
+      });
+    }
+    qtdFinal = qtdNova;
+  }
+
+  const skuAntigo = normalizeText(row.sku);
+  let skuNovo = skuAntigo;
+  let itemNovo: typeof itens.$inferSelect | null = null;
+  const [itemAntigoCad] = await db.select().from(itens).where(eq(itens.sku, skuAntigo));
+  if (input.sku != null && String(input.sku).trim()) {
+    skuNovo = normalizeText(input.sku);
+    const [cad] = await db.select().from(itens).where(eq(itens.sku, skuNovo));
+    if (!cad) throw new Error(`Item ${skuNovo} não encontrado no cadastro.`);
+    if (!cad.ativo) throw new Error(`Item ${skuNovo} está inativo.`);
+    if (!itemPodeVenderNaUnidade(parseUnidadesJson(cad.unidades), row.unidade)) {
+      throw new Error(`Item ${skuNovo} não está alocado à unidade ${row.unidade}.`);
+    }
+    itemNovo = cad;
+    if (skuNovo !== skuAntigo) {
+      patch.sku = skuNovo;
+      patch.descricao = cad.descricao || skuNovo;
+      patch.categoria = cad.categoriaDash || "";
+      patch.subcategoria = cad.subcategoriaMeep || "";
+      patch.precoUnitario = Number(cad.preco) || 0;
+      patch.subtotalBruto = Math.round(patch.precoUnitario * qtdFinal * 100) / 100;
+      mudancas.push({
+        campo: "item",
+        de: `${skuAntigo} (${row.descricao || "—"})`,
+        para: `${skuNovo} (${cad.descricao || "—"})`,
+      });
+    } else if (qtdFinal !== row.quantidade) {
+      const preco = Number(row.precoUnitario) || Number(cad.preco) || 0;
+      patch.precoUnitario = preco;
+      patch.subtotalBruto = Math.round(preco * qtdFinal * 100) / 100;
+    }
+  } else if (qtdFinal !== row.quantidade) {
+    const preco = Number(row.precoUnitario) || 0;
+    patch.subtotalBruto = Math.round(preco * qtdFinal * 100) / 100;
+  }
+
   if (input.valorRecebido != null && String(input.valorRecebido).trim() !== "") {
     const valorNovo = Number(String(input.valorRecebido).replace(",", "."));
     if (!Number.isFinite(valorNovo) || valorNovo < 0) throw new Error("Valor inválido.");
     const valorAnt = Number(row.valorRecebido) || 0;
     if (Math.abs(valorNovo - valorAnt) > 0.0001) {
       patch.valorRecebido = Math.round(valorNovo * 100) / 100;
-      const subtotal = Number(row.subtotalBruto) || 0;
+      const subtotal = (patch.subtotalBruto ?? Number(row.subtotalBruto)) || 0;
       if (subtotal > 0) {
         patch.desconto = Math.round(Math.max(0, subtotal - patch.valorRecebido) * 100) / 100;
       }
@@ -670,6 +729,35 @@ export async function atualizarVenda(
         para: patch.valorRecebido.toFixed(2),
       });
     }
+  } else if (patch.subtotalBruto != null && skuNovo !== skuAntigo) {
+    const valorAnt = Number(row.valorRecebido) || 0;
+    if (Math.abs(patch.subtotalBruto - valorAnt) > 0.0001) {
+      patch.valorRecebido = patch.subtotalBruto;
+      patch.desconto = 0;
+      mudancas.push({
+        campo: "valor",
+        de: valorAnt.toFixed(2),
+        para: patch.valorRecebido.toFixed(2),
+      });
+    }
+  }
+
+  const trocouItem = skuNovo !== skuAntigo;
+  const trocouQtd = qtdFinal !== row.quantidade;
+  const itemNovoCad = itemNovo || itemAntigoCad;
+  const itemAntigoIlimitado = Boolean(itemAntigoCad?.ilimitado);
+  const itemNovoIlimitado = Boolean(itemNovo?.ilimitado ?? itemAntigoCad?.ilimitado);
+
+  if (trocouItem || trocouQtd) {
+    await validarEstoqueTrocaVenda({
+      unidade: row.unidade,
+      skuAntigo,
+      qtdAntiga: row.quantidade,
+      skuNovo,
+      qtdNova: qtdFinal,
+      itemNovoIlimitado,
+      itemNovoCad,
+    });
   }
 
   if (!mudancas.length) {
@@ -677,6 +765,20 @@ export async function atualizarVenda(
   }
 
   await db.update(vendas).set(patch).where(eq(vendas.id, sid));
+
+  if (trocouItem || trocouQtd) {
+    await ajustarEstoqueTrocaVenda({
+      vendaId: sid,
+      unidade: row.unidade,
+      skuAntigo,
+      qtdAntiga: row.quantidade,
+      skuNovo,
+      qtdNova: qtdFinal,
+      itemAntigoIlimitado,
+      itemNovoIlimitado,
+      itemNovoCad,
+    });
+  }
 
   const quem = normalizeText(operador) || (await operadorAtual());
   const resumo = mudancas.map((m) => `${m.campo}: ${m.de} → ${m.para}`).join("; ");
@@ -692,6 +794,108 @@ export async function atualizarVenda(
     message: `Venda #${sid} atualizada (${mudancas.length} campo(s)).`,
     mudancas,
   };
+}
+
+async function validarEstoqueTrocaVenda(opts: {
+  unidade: string;
+  skuAntigo: string;
+  qtdAntiga: number;
+  skuNovo: string;
+  qtdNova: number;
+  itemNovoIlimitado: boolean;
+  itemNovoCad: { subcategoriaMeep?: string | null; categoriaDash?: string | null } | null | undefined;
+}) {
+  if (opts.itemNovoIlimitado) return;
+  const precisa =
+    opts.skuAntigo === opts.skuNovo ? opts.qtdNova - opts.qtdAntiga : opts.qtdNova;
+  if (precisa <= 0) return;
+  const origem = await resolverOrigemEstoqueBaixa(opts.skuNovo, opts.unidade, opts.itemNovoCad);
+  const [est] = await db
+    .select()
+    .from(estoque)
+    .where(and(eq(estoque.sku, opts.skuNovo), eq(estoque.unidade, origem)));
+  if (!est || est.quantidade < precisa) {
+    throw new Error(
+      `Estoque insuficiente para ${opts.skuNovo} em ${origem}. Disponível: ${est?.quantidade ?? 0}`
+    );
+  }
+}
+
+/** Devolve estoque do item antigo e baixa o novo (ou ajusta delta se mesmo SKU). */
+async function ajustarEstoqueTrocaVenda(opts: {
+  vendaId: number;
+  unidade: string;
+  skuAntigo: string;
+  qtdAntiga: number;
+  skuNovo: string;
+  qtdNova: number;
+  itemAntigoIlimitado: boolean;
+  itemNovoIlimitado: boolean;
+  itemNovoCad: { subcategoriaMeep?: string | null; categoriaDash?: string | null } | null | undefined;
+}) {
+  const ref = String(opts.vendaId);
+
+  if (opts.skuAntigo === opts.skuNovo) {
+    const delta = opts.qtdAntiga - opts.qtdNova;
+    if (delta === 0 || opts.itemAntigoIlimitado) return;
+    if (delta > 0) {
+      await registrarMovimentoEstoque(
+        opts.skuAntigo,
+        opts.unidade,
+        delta,
+        "EDICAO_VENDA_ESTOQUE",
+        ref
+      );
+      return;
+    }
+    const origem = await resolverOrigemEstoqueBaixa(opts.skuNovo, opts.unidade, opts.itemNovoCad);
+    await registrarMovimentoEstoque(opts.skuNovo, origem, delta, "EDICAO_VENDA_ESTOQUE", ref);
+    return;
+  }
+
+  if (!opts.itemAntigoIlimitado && opts.qtdAntiga > 0) {
+    await registrarMovimentoEstoque(
+      opts.skuAntigo,
+      opts.unidade,
+      opts.qtdAntiga,
+      "EDICAO_VENDA_DEVOLUCAO",
+      ref
+    );
+  }
+
+  if (!opts.itemNovoIlimitado && opts.qtdNova > 0) {
+    const origem = await resolverOrigemEstoqueBaixa(opts.skuNovo, opts.unidade, opts.itemNovoCad);
+    await registrarMovimentoEstoque(
+      opts.skuNovo,
+      origem,
+      -opts.qtdNova,
+      "EDICAO_VENDA_BAIXA",
+      ref
+    );
+  }
+}
+
+async function resolverOrigemEstoqueBaixa(
+  sku: string,
+  unidade: string,
+  itemCad: { subcategoriaMeep?: string | null; categoriaDash?: string | null } | null | undefined
+) {
+  const unik =
+    campoEhUnik3d(itemCad?.subcategoriaMeep) || campoEhUnik3d(itemCad?.categoriaDash);
+  const [estUnidade] = await db
+    .select()
+    .from(estoque)
+    .where(and(eq(estoque.sku, sku), eq(estoque.unidade, unidade)));
+  if (estUnidade && estUnidade.quantidade > 0) return unidade;
+  if (unik) {
+    const [estGeral] = await db
+      .select()
+      .from(estoque)
+      .where(and(eq(estoque.sku, sku), eq(estoque.unidade, "GERAL")));
+    if (estGeral && estGeral.quantidade > 0) return "GERAL";
+  }
+  if (estUnidade) return unidade;
+  throw new Error(`SKU ${sku} sem estoque na unidade ${unidade}.`);
 }
 
 /** @deprecated use atualizarVenda */

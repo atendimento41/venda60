@@ -95,12 +95,14 @@ export async function POST(req: Request) {
       await criarSolicitacaoEdicao(
         {
           tipo: body.tipo,
+          acao: body.acao,
           registroId: Number(body.registroId ?? body.id),
           motivo: body.motivo,
           data: body.data,
           idVendedor: body.idVendedor ?? body.id_vendedor,
           vendedor: body.vendedor,
           valorRecebido: body.valorRecebido ?? body.valor,
+          sku: body.sku,
           item: body.item,
           quantidade: body.quantidade,
         },

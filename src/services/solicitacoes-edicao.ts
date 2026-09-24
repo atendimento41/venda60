@@ -10,31 +10,18 @@ import {
 } from "@/lib/utils";
 import { LOG_TIPO, operadorAtual, registrarLog } from "@/lib/log";
 import { ensureSolicitacoesEdicaoSchema } from "@/lib/ensure-schema";
-import { atualizarVenda } from "@/services/vendas";
+import { atualizarVenda, cancelarVenda } from "@/services/vendas";
 import {
   atualizarPrime,
+  cancelarPrime,
   getNivelPrime,
   valorVendaPrime,
 } from "@/services/prime";
 import { obterVendedorPorIdOuNome } from "@/services/vendedores";
 
 export type TipoSolicitacao = "VENDA" | "PRIME";
+export type AcaoSolicitacao = "EDICAO" | "CANCELAMENTO";
 export type StatusSolicitacao = "PENDENTE" | "APROVADA" | "RECUSADA" | "CANCELADA";
-
-export type ValoresVendaPropostos = {
-  data: string;
-  idVendedor: string;
-  vendedor: string;
-  valorRecebido: number;
-};
-
-export type ValoresPrimePropostos = {
-  data: string;
-  idVendedor: string;
-  vendedor: string;
-  item: string;
-  quantidade: number;
-};
 
 function parseJson<T>(raw: string | null | undefined, fallback: T): T {
   if (!raw) return fallback;
@@ -49,6 +36,7 @@ function mapRow(row: typeof solicitacoesEdicao.$inferSelect) {
   return {
     id: row.id,
     tipo: row.tipo as TipoSolicitacao,
+    acao: (normalizeUpper(row.acao || "EDICAO") || "EDICAO") as AcaoSolicitacao,
     registroId: row.registroId,
     unidade: row.unidade || "",
     valoresAtual: parseJson<Record<string, unknown>>(row.valoresAtual, {}),
@@ -69,7 +57,7 @@ function mapRow(row: typeof solicitacoesEdicao.$inferSelect) {
 async function snapshotVenda(registroId: number) {
   const [row] = await db.select().from(vendas).where(eq(vendas.id, registroId));
   if (!row) throw new Error("Venda não encontrada.");
-  if (isVendaCancelada(row.status)) throw new Error("Venda cancelada não pode ser editada.");
+  if (isVendaCancelada(row.status)) throw new Error("Venda cancelada não pode ser alterada.");
   const raw = String(row.data || "").trim();
   const m = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})/.exec(raw);
   return {
@@ -80,15 +68,17 @@ async function snapshotVenda(registroId: number) {
       idVendedor: String(row.idVendedor || ""),
       vendedor: String(row.vendedor || ""),
       valorRecebido: Number(row.valorRecebido) || 0,
+      sku: String(row.sku || ""),
       item: String(row.descricao || row.sku || ""),
-    } satisfies ValoresVendaPropostos & { dataHora: string; item: string },
+      quantidade: row.quantidade,
+    },
   };
 }
 
 async function snapshotPrime(registroId: number) {
   const [row] = await db.select().from(primeVendas).where(eq(primeVendas.id, registroId));
   if (!row) throw new Error("Lançamento PRIME não encontrado.");
-  if (isVendaCancelada(row.status)) throw new Error("PRIME cancelado não pode ser editado.");
+  if (isVendaCancelada(row.status)) throw new Error("PRIME cancelado não pode ser alterado.");
   const raw = String(row.data || "").trim();
   const m = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})/.exec(raw);
   const nivel = row.nivel || getNivelPrime(row.item) || "";
@@ -102,19 +92,21 @@ async function snapshotPrime(registroId: number) {
       item: nivel || row.item,
       quantidade: row.quantidade,
       valorRecebido: valorVendaPrime(row.quantidade, nivel || row.item),
-    } satisfies ValoresPrimePropostos & { dataHora: string; valorRecebido: number },
+    },
   };
 }
 
 export async function criarSolicitacaoEdicao(
   input: {
     tipo: string;
+    acao?: string;
     registroId: number;
     motivo: string;
     data?: string;
     idVendedor?: string;
     vendedor?: string;
     valorRecebido?: number | string;
+    sku?: string;
     item?: string;
     quantidade?: number | string;
   },
@@ -123,6 +115,10 @@ export async function criarSolicitacaoEdicao(
   await ensureSolicitacoesEdicaoSchema();
   const tipo = normalizeUpper(input.tipo) as TipoSolicitacao;
   if (tipo !== "VENDA" && tipo !== "PRIME") throw new Error("Tipo inválido (VENDA ou PRIME).");
+  const acao = (normalizeUpper(input.acao || "EDICAO") || "EDICAO") as AcaoSolicitacao;
+  if (acao !== "EDICAO" && acao !== "CANCELAMENTO") {
+    throw new Error("Ação inválida (EDICAO ou CANCELAMENTO).");
+  }
   const registroId = Number(input.registroId);
   if (!Number.isFinite(registroId) || registroId <= 0) throw new Error("Registro inválido.");
   const motivo = normalizeText(input.motivo);
@@ -154,63 +150,65 @@ export async function criarSolicitacaoEdicao(
   if (tipo === "VENDA") {
     const snap = await snapshotVenda(registroId);
     unidade = snap.unidade;
-    valoresAtual = {
-      data: snap.atual.data,
-      idVendedor: snap.atual.idVendedor,
-      vendedor: snap.atual.vendedor,
-      valorRecebido: snap.atual.valorRecebido,
-      item: snap.atual.item,
-      dataHora: snap.atual.dataHora,
-    };
-    if (!input.data?.trim()) throw new Error("Informe a data e hora propostas.");
-    const vend = await obterVendedorPorIdOuNome(input.idVendedor, input.vendedor);
-    if (!vend) throw new Error("Selecione o vendedor.");
-    if (!vend.ativo) throw new Error("Vendedor inativo.");
-    const valorRaw = input.valorRecebido;
-    if (valorRaw == null || String(valorRaw).trim() === "") throw new Error("Informe o valor.");
-    const valorNovo = Number(String(valorRaw).replace(",", "."));
-    if (!Number.isFinite(valorNovo) || valorNovo < 0) throw new Error("Valor inválido.");
-    valoresPropostos = {
-      data: normalizeText(input.data),
-      idVendedor: vend.id,
-      vendedor: vend.nome,
-      valorRecebido: Math.round(valorNovo * 100) / 100,
-    };
+    valoresAtual = { ...snap.atual };
+    if (acao === "CANCELAMENTO") {
+      valoresPropostos = { ...snap.atual, cancelar: true };
+    } else {
+      if (!input.data?.trim()) throw new Error("Informe a data e hora propostas.");
+      const vend = await obterVendedorPorIdOuNome(input.idVendedor, input.vendedor);
+      if (!vend) throw new Error("Selecione o vendedor.");
+      if (!vend.ativo) throw new Error("Vendedor inativo.");
+      const sku = normalizeText(input.sku || snap.atual.sku);
+      if (!sku) throw new Error("Informe o item (SKU).");
+      const qtd = Math.floor(
+        Number(String(input.quantidade ?? snap.atual.quantidade).replace(",", "."))
+      );
+      if (!Number.isFinite(qtd) || qtd <= 0) throw new Error("Quantidade inválida.");
+      const valorRaw = input.valorRecebido;
+      if (valorRaw == null || String(valorRaw).trim() === "") throw new Error("Informe o valor.");
+      const valorNovo = Number(String(valorRaw).replace(",", "."));
+      if (!Number.isFinite(valorNovo) || valorNovo < 0) throw new Error("Valor inválido.");
+      valoresPropostos = {
+        data: normalizeText(input.data),
+        idVendedor: vend.id,
+        vendedor: vend.nome,
+        sku,
+        quantidade: qtd,
+        valorRecebido: Math.round(valorNovo * 100) / 100,
+      };
+    }
   } else {
     const snap = await snapshotPrime(registroId);
     unidade = snap.unidade;
-    valoresAtual = {
-      data: snap.atual.data,
-      idVendedor: snap.atual.idVendedor,
-      vendedor: snap.atual.vendedor,
-      item: snap.atual.item,
-      quantidade: snap.atual.quantidade,
-      valorRecebido: snap.atual.valorRecebido,
-      dataHora: snap.atual.dataHora,
-    };
-    if (!input.data?.trim()) throw new Error("Informe a data e hora propostas.");
-    const vend = await obterVendedorPorIdOuNome(input.idVendedor, input.vendedor);
-    if (!vend) throw new Error("Selecione o vendedor.");
-    if (!vend.ativo) throw new Error("Vendedor inativo.");
-    const item = normalizeText(input.item);
-    if (!item || !getNivelPrime(item)) {
-      throw new Error("Item PRIME inválido (use ELITE, PLATINA ou OURO).");
+    valoresAtual = { ...snap.atual };
+    if (acao === "CANCELAMENTO") {
+      valoresPropostos = { ...snap.atual, cancelar: true };
+    } else {
+      if (!input.data?.trim()) throw new Error("Informe a data e hora propostas.");
+      const vend = await obterVendedorPorIdOuNome(input.idVendedor, input.vendedor);
+      if (!vend) throw new Error("Selecione o vendedor.");
+      if (!vend.ativo) throw new Error("Vendedor inativo.");
+      const item = normalizeText(input.item);
+      if (!item || !getNivelPrime(item)) {
+        throw new Error("Item PRIME inválido (use ELITE, PLATINA ou OURO).");
+      }
+      const qtd = Math.floor(Number(String(input.quantidade ?? "").replace(",", ".")));
+      if (!Number.isFinite(qtd) || qtd <= 0) throw new Error("Quantidade inválida.");
+      valoresPropostos = {
+        data: normalizeText(input.data),
+        idVendedor: vend.id,
+        vendedor: vend.nome,
+        item,
+        quantidade: qtd,
+      };
     }
-    const qtd = Math.floor(Number(String(input.quantidade ?? "").replace(",", ".")));
-    if (!Number.isFinite(qtd) || qtd <= 0) throw new Error("Quantidade inválida.");
-    valoresPropostos = {
-      data: normalizeText(input.data),
-      idVendedor: vend.id,
-      vendedor: vend.nome,
-      item,
-      quantidade: qtd,
-    };
   }
 
   const [inserted] = await db
     .insert(solicitacoesEdicao)
     .values({
       tipo,
+      acao,
       registroId,
       unidade,
       valoresAtual: JSON.stringify(valoresAtual),
@@ -223,11 +221,13 @@ export async function criarSolicitacaoEdicao(
     .returning({ id: solicitacoesEdicao.id });
 
   const id = inserted?.id;
+  const rotuloAcao = acao === "CANCELAMENTO" ? "cancelamento" : "edição";
   await registrarLog(
     LOG_TIPO.SOLICITACAO_EDICAO,
     {
       id,
       tipo,
+      acao,
       registroId,
       solicitadoPor: quem,
       motivo,
@@ -235,12 +235,12 @@ export async function criarSolicitacaoEdicao(
       valoresPropostos,
     },
     true,
-    `Solicitação #${id} ${tipo} #${registroId} por ${quem}: ${motivo}`
+    `Solicitação #${id} ${rotuloAcao} ${tipo} #${registroId} por ${quem}: ${motivo}`
   );
 
   return {
     ok: true,
-    message: `Solicitação #${id} enviada. Aguardando aprovação.`,
+    message: `Solicitação #${id} (${rotuloAcao}) enviada. Aguardando aprovação.`,
     id,
   };
 }
@@ -284,10 +284,18 @@ export async function aprovarSolicitacao(id: number, operador?: string) {
   if (row.status !== "PENDENTE") throw new Error("Solicitação não está pendente.");
 
   const quem = normalizeText(operador) || (await operadorAtual());
+  const acao = (normalizeUpper(row.acao || "EDICAO") || "EDICAO") as AcaoSolicitacao;
   const proposto = parseJson<Record<string, unknown>>(row.valoresPropostos, {});
   let mudancas: Array<{ campo: string; de: string; para: string }> = [];
 
-  if (row.tipo === "VENDA") {
+  if (acao === "CANCELAMENTO") {
+    if (row.tipo === "VENDA") {
+      await cancelarVenda(row.registroId, row.motivo, quem);
+    } else {
+      await cancelarPrime(row.registroId, row.motivo, quem);
+    }
+    mudancas = [{ campo: "status", de: "ABERTO", para: "CANCELADO" }];
+  } else if (row.tipo === "VENDA") {
     const res = await atualizarVenda(
       {
         id: row.registroId,
@@ -295,6 +303,8 @@ export async function aprovarSolicitacao(id: number, operador?: string) {
         idVendedor: String(proposto.idVendedor || ""),
         vendedor: String(proposto.vendedor || ""),
         valorRecebido: proposto.valorRecebido as number | string,
+        sku: proposto.sku ? String(proposto.sku) : undefined,
+        quantidade: proposto.quantidade as number | string | undefined,
       },
       quem
     );
@@ -328,12 +338,14 @@ export async function aprovarSolicitacao(id: number, operador?: string) {
     mudancas.length > 0
       ? mudancas.map((m) => `${m.campo}: ${m.de} → ${m.para}`).join("; ")
       : "sem mudanças efetivas";
+  const rotuloAcao = acao === "CANCELAMENTO" ? "cancelamento" : "edição";
 
   await registrarLog(
     LOG_TIPO.APROVACAO_EDICAO,
     {
       id: sid,
       tipo: row.tipo,
+      acao,
       registroId: row.registroId,
       solicitadoPor: row.solicitadoPor,
       aprovadoPor: quem,
@@ -341,7 +353,7 @@ export async function aprovarSolicitacao(id: number, operador?: string) {
       mudancas,
     },
     true,
-    `Solicitação #${sid} APROVADA: ${row.tipo} #${row.registroId} — pediu ${row.solicitadoPor}, autorizou ${quem}. Motivo: ${row.motivo}. ${resumo}`
+    `Solicitação #${sid} APROVADA (${rotuloAcao}): ${row.tipo} #${row.registroId} — pediu ${row.solicitadoPor}, autorizou ${quem}. Motivo: ${row.motivo}. ${resumo}`
   );
 
   return {
@@ -365,6 +377,7 @@ export async function recusarSolicitacao(id: number, obs: string, operador?: str
   if (row.status !== "PENDENTE") throw new Error("Solicitação não está pendente.");
 
   const quem = normalizeText(operador) || (await operadorAtual());
+  const acao = normalizeUpper(row.acao || "EDICAO") || "EDICAO";
 
   await db
     .update(solicitacoesEdicao)
@@ -381,6 +394,7 @@ export async function recusarSolicitacao(id: number, obs: string, operador?: str
     {
       id: sid,
       tipo: row.tipo,
+      acao,
       registroId: row.registroId,
       solicitadoPor: row.solicitadoPor,
       recusadoPor: quem,
@@ -389,7 +403,7 @@ export async function recusarSolicitacao(id: number, obs: string, operador?: str
       valoresPropostos: parseJson(row.valoresPropostos, {}),
     },
     true,
-    `Solicitação #${sid} RECUSADA: ${row.tipo} #${row.registroId} — pediu ${row.solicitadoPor}, recusou ${quem}. Motivo pedido: ${row.motivo}. Obs: ${razao}`
+    `Solicitação #${sid} RECUSADA (${acao}): ${row.tipo} #${row.registroId} — pediu ${row.solicitadoPor}, recusou ${quem}. Motivo pedido: ${row.motivo}. Obs: ${razao}`
   );
 
   return { ok: true, message: `Solicitação #${sid} recusada.` };
