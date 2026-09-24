@@ -190,7 +190,7 @@ export default function SolicitacoesPendentesCard({
                       </ul>
                       {recusaId === s.id && (
                         <div style={{ marginTop: 8 }}>
-                          <label>Obs. da recusa *</label>
+                          <label>Obs. da recusa (campo obrigatório)</label>
                           <textarea
                             value={obsRecusa}
                             onChange={(e) => setObsRecusa(e.target.value)}

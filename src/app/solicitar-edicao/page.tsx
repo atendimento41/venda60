@@ -565,7 +565,7 @@ export default function SolicitarEdicaoPage() {
             </div>
           )}
           <div className="field" style={{ marginTop: 8 }}>
-            <label>Motivo da solicitação *</label>
+            <label>Motivo da solicitação (campo obrigatório)</label>
             <textarea
               value={motivo}
               onChange={(e) => setMotivo(e.target.value)}
