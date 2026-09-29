@@ -3,13 +3,23 @@
 export type PdfColuna = string;
 export type PdfLinha = Array<string | number>;
 
+export type PdfTabelaExtra = {
+  titulo: string;
+  colunas: PdfColuna[];
+  linhas: PdfLinha[];
+  /** Linha de totais alinhada às colunas (mesma quantidade de células). */
+  totais?: PdfLinha;
+};
+
 export function exportarRelatorioPdf(opts: {
   titulo: string;
   subtitulo?: string;
   colunas: PdfColuna[];
   linhas: PdfLinha[];
+  /** Linha de totais alinhada às colunas (mesma quantidade de células). */
+  totais?: PdfLinha;
   rodape?: string;
-  extras?: Array<{ titulo: string; colunas: PdfColuna[]; linhas: PdfLinha[] }>;
+  extras?: PdfTabelaExtra[];
 }) {
   const esc = (v: string | number) =>
     String(v ?? "")
@@ -17,19 +27,24 @@ export function exportarRelatorioPdf(opts: {
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;");
 
-  const tabela = (colunas: PdfColuna[], linhas: PdfLinha[]) => {
+  const tabela = (colunas: PdfColuna[], linhas: PdfLinha[], totais?: PdfLinha) => {
     const head = colunas.map((c) => `<th>${esc(c)}</th>`).join("");
     const body = linhas
       .map((row) => `<tr>${row.map((c) => `<td>${esc(c)}</td>`).join("")}</tr>`)
       .join("");
+    const foot =
+      totais && linhas.length
+        ? `<tfoot><tr>${totais.map((c) => `<td>${esc(c)}</td>`).join("")}</tr></tfoot>`
+        : "";
     return `<table>
     <thead><tr>${head}</tr></thead>
     <tbody>${body || `<tr><td colspan="${colunas.length}">Sem dados.</td></tr>`}</tbody>
+    ${foot}
   </table>`;
   };
 
   const extrasHtml = (opts.extras || [])
-    .map((t) => `<h2>${esc(t.titulo)}</h2>${tabela(t.colunas, t.linhas)}`)
+    .map((t) => `<h2>${esc(t.titulo)}</h2>${tabela(t.colunas, t.linhas, t.totais)}`)
     .join("");
   const agora = new Intl.DateTimeFormat("pt-BR", {
     dateStyle: "short",
@@ -57,6 +72,7 @@ export function exportarRelatorioPdf(opts: {
     th, td { border: 1px solid #ccc; padding: 5px 6px; text-align: left; }
     th { background: #1c1915; color: #fff; font-weight: 500; }
     tr:nth-child(even) td { background: #f7f5f1; }
+    tfoot td { background: #fbe3e4 !important; border-top: 2px solid #e11c24; font-weight: 700; }
     td.num, th.num { text-align: right; }
     .foot { margin-top: 12px; font-size: 11px; color: #444; }
   </style>
@@ -70,7 +86,7 @@ export function exportarRelatorioPdf(opts: {
     </div>
     <div class="sub">Gerado em ${esc(agora)}</div>
   </div>
-  ${tabela(opts.colunas, opts.linhas)}
+  ${tabela(opts.colunas, opts.linhas, opts.totais)}
   ${extrasHtml}
   ${opts.rodape ? `<div class="foot">${esc(opts.rodape)}</div>` : ""}
   <script>

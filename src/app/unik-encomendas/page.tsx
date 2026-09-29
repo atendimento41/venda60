@@ -111,15 +111,9 @@ export default function UnikEncomendasPage() {
             `R$ ${formatMoeda(l.custo)}`,
             `R$ ${formatMoeda(l.valorFinal)}`,
           ])}
-          extras={
+          totais={
             totais
-              ? [
-                  {
-                    titulo: "Totais",
-                    colunas: ["Quantidade", "Valor final"],
-                    linhas: [[totais.quantidade, `R$ ${formatMoeda(totais.valorFinal)}`]],
-                  },
-                ]
+              ? ["Total", "", "", "", totais.quantidade, "", `R$ ${formatMoeda(totais.valorFinal)}`]
               : undefined
           }
           disabled={!linhas || linhas.length === 0}

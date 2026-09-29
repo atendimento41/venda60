@@ -85,9 +85,18 @@ export default function SaidasMensalPage() {
             l.saidas,
             l.estoqueFinal,
           ])}
-          rodape={
+          totais={
             res
-              ? `Saídas: ${res.totalSaidas} | Início total: ${res.totalEstoqueInicio} | Final total: ${res.totalEstoqueFinal}`
+              ? [
+                  `Total (${asArray(res.linhas).length} linhas)`,
+                  "",
+                  "",
+                  "",
+                  "",
+                  res.totalEstoqueInicio,
+                  res.totalSaidas,
+                  res.totalEstoqueFinal,
+                ]
               : undefined
           }
           disabled={!res || asArray(res.linhas).length === 0}
@@ -106,10 +115,17 @@ export default function SaidasMensalPage() {
                 </tr>
               ))}
             </tbody>
+            {asArray(res.linhas).length > 0 && (
+              <tfoot>
+                <tr>
+                  <th colSpan={5}>Total ({asArray(res.linhas).length} linhas)</th>
+                  <th className="num">{res.totalEstoqueInicio}</th>
+                  <th className="num">{res.totalSaidas}</th>
+                  <th className="num">{res.totalEstoqueFinal}</th>
+                </tr>
+              </tfoot>
+            )}
           </table>
-          <div className="totals">
-            Saídas: {res.totalSaidas} | Início total: {res.totalEstoqueInicio} | Final total: {res.totalEstoqueFinal}
-          </div>
         </>
       )}
     </AppShell>

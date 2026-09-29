@@ -120,23 +120,20 @@ export default function UnikVendasPage() {
             `R$ ${formatMoeda(l.lucroUnik)}`,
             `R$ ${formatMoeda(l.lucro60)}`,
           ])}
-          extras={
+          totais={
             totais
               ? [
-                  {
-                    titulo: "Totais",
-                    colunas: ["Qtd", "Total vendido", "Custo UNIK", "Custo 60", "Receber UNIK", "Receber 60"],
-                    linhas: [
-                      [
-                        totais.quantidade,
-                        `R$ ${formatMoeda(totais.totalVendido)}`,
-                        `R$ ${formatMoeda(totais.custoUnik)}`,
-                        `R$ ${formatMoeda(totais.custo60)}`,
-                        `R$ ${formatMoeda(totais.lucroUnik)}`,
-                        `R$ ${formatMoeda(totais.lucro60)}`,
-                      ],
-                    ],
-                  },
+                  "Total",
+                  "",
+                  "",
+                  "",
+                  "",
+                  totais.quantidade,
+                  `R$ ${formatMoeda(totais.totalVendido)}`,
+                  `R$ ${formatMoeda(totais.custoUnik)}`,
+                  `R$ ${formatMoeda(totais.custo60)}`,
+                  `R$ ${formatMoeda(totais.lucroUnik)}`,
+                  `R$ ${formatMoeda(totais.lucro60)}`,
                 ]
               : undefined
           }

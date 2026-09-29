@@ -178,6 +178,15 @@ export default function UnikDashMesPage() {
                 `R$ ${formatMoeda(m.lucroUnik)}`,
                 `R$ ${formatMoeda(m.lucro60)}`,
               ]),
+              totais: totais
+                ? [
+                    "Total",
+                    totais.quantidade,
+                    `R$ ${formatMoeda(totais.totalVendido)}`,
+                    `R$ ${formatMoeda(totais.lucroUnik)}`,
+                    `R$ ${formatMoeda(totais.lucro60)}`,
+                  ]
+                : undefined,
             },
             {
               titulo: `Encomenda 60${janela ? ` (${janela})` : ""}`,
@@ -187,15 +196,14 @@ export default function UnikDashMesPage() {
                 m.quantidade,
                 `R$ ${formatMoeda(m.lucro60)}`,
               ]),
+              totais: totaisEncomenda
+                ? ["Total", totaisEncomenda.quantidade, `R$ ${formatMoeda(totaisEncomenda.lucro60)}`]
+                : undefined,
             },
           ]}
           rodape={
             totais
-              ? `${janela || "Período"}: Qtd ${totais.quantidade} | Total R$ ${formatMoeda(totais.totalVendido)} | Custo UNIK R$ ${formatMoeda(totais.custoUnik)} | Custo 60 R$ ${formatMoeda(totais.custo60)} | Valores UNIK R$ ${formatMoeda(totais.lucroUnik)} | Valores 60 R$ ${formatMoeda(totais.lucro60)}${
-                  totaisEncomenda
-                    ? ` | Encomenda 60 R$ ${formatMoeda(totaisEncomenda.lucro60)}`
-                    : ""
-                }`
+              ? `${janela || "Período"}: Custo UNIK R$ ${formatMoeda(totais.custoUnik)} | Custo 60 R$ ${formatMoeda(totais.custo60)}`
               : undefined
           }
           disabled={!totais}

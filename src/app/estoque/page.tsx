@@ -103,6 +103,16 @@ export default function EstoquePage() {
 
   const subs = categoria ? opcoes.categoriasRaw[categoria] || [] : [];
   const linhas = asArray<Linha>(res?.linhas);
+  const limitadas = linhas.filter((l) => !l.ilimitado);
+  const soma = (f: (l: Linha) => number) => limitadas.reduce((s, l) => s + (Number(f(l)) || 0), 0);
+  const tot = {
+    estoque: soma((l) => l.estoque),
+    retirada: soma((l) => l.retirada),
+    vendidos: soma((l) => l.vendidos),
+    estoqueAtual: soma((l) => l.estoqueAtual),
+    estoqueGeral: soma((l) => l.estoqueGeral ?? 0),
+  };
+  const rotuloTotal = `Total (${linhas.length} ${linhas.length === 1 ? "linha" : "linhas"}, exceto ilimitados)`;
 
   return (
     <AppShell title="Consulta de Estoque">
@@ -221,6 +231,18 @@ export default function EstoquePage() {
             l.ilimitado ? "Ilimitado" : l.estoqueAtual,
             l.ilimitado ? "—" : l.estoqueGeral ?? 0,
           ])}
+          totais={[
+            rotuloTotal,
+            "",
+            "",
+            "",
+            "",
+            tot.estoque,
+            tot.retirada,
+            tot.vendidos,
+            tot.estoqueAtual,
+            tot.estoqueGeral,
+          ]}
           rodape={res?.formula}
           disabled={!res || linhas.length === 0}
         />
@@ -282,10 +304,19 @@ export default function EstoquePage() {
                   ))
                 )}
               </tbody>
+              {linhas.length > 0 && (
+                <tfoot>
+                  <tr>
+                    <th colSpan={6}>{rotuloTotal}</th>
+                    <th className="num">{tot.estoque}</th>
+                    <th className="num">{tot.retirada}</th>
+                    <th className="num">{tot.vendidos}</th>
+                    <th className="num">{tot.estoqueAtual}</th>
+                    <th className="num">{tot.estoqueGeral}</th>
+                  </tr>
+                </tfoot>
+              )}
             </table>
-          </div>
-          <div className="totals">
-            Linhas: {res.totalSkus} | Estoque atual (exceto ilimitados): {res.totalEstoque}
           </div>
         </>
       )}

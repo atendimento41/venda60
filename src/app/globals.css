@@ -974,9 +974,16 @@ th {
   font-weight: 700;
 }
 
-tfoot th {
+tfoot th,
+tfoot td {
   color: var(--text);
   font-weight: 700;
+  background: var(--red-soft);
+  border-top: 1px solid rgba(225, 28, 36, 0.45);
+  font-size: 13px;
+  letter-spacing: normal;
+  text-transform: none;
+  white-space: nowrap;
 }
 
 td select {

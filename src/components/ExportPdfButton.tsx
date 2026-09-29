@@ -1,12 +1,13 @@
 "use client";
 
-import { exportarRelatorioPdf, type PdfLinha } from "@/lib/pdf-export";
+import { exportarRelatorioPdf, type PdfLinha, type PdfTabelaExtra } from "@/lib/pdf-export";
 
 export default function ExportPdfButton({
   titulo,
   subtitulo,
   colunas,
   linhas,
+  totais,
   rodape,
   extras,
   disabled,
@@ -15,8 +16,9 @@ export default function ExportPdfButton({
   subtitulo?: string;
   colunas: string[];
   linhas: PdfLinha[];
+  totais?: PdfLinha;
   rodape?: string;
-  extras?: Array<{ titulo: string; colunas: string[]; linhas: PdfLinha[] }>;
+  extras?: PdfTabelaExtra[];
   disabled?: boolean;
 }) {
   return (
@@ -30,6 +32,7 @@ export default function ExportPdfButton({
           subtitulo,
           colunas,
           linhas,
+          totais,
           rodape,
           extras,
         })

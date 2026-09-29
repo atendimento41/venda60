@@ -69,10 +69,17 @@ export default function ResumoDiarioPage() {
     carregar();
   }, [carregar]);
 
-  const diaria = asArray(relatorio?.diaria);
-  const mensal = asArray(relatorio?.mensal);
-  const diariaPrime = asArray(relatorio?.diariaPrime);
-  const mensalPrime = asArray(relatorio?.mensalPrime);
+  const diaria = asArray<RelatorioIndex["diaria"][number]>(relatorio?.diaria);
+  const mensal = asArray<RelatorioIndex["mensal"][number]>(relatorio?.mensal);
+  const diariaPrime = asArray<RelatorioIndex["diariaPrime"][number]>(relatorio?.diariaPrime);
+  const mensalPrime = asArray<RelatorioIndex["mensalPrime"][number]>(relatorio?.mensalPrime);
+
+  const somar = <T,>(lista: T[], f: (x: T) => number) =>
+    lista.reduce((s, x) => s + (Number(f(x)) || 0), 0);
+  const comissaoVendasLinha = (r: RelatorioIndex["mensal"][number]) =>
+    r.comissaoVendas != null
+      ? r.comissaoVendas
+      : r.comissaoPhoto + r.comissaoTempoExtra + r.comissao3d + r.comissaoProdutos;
 
   return (
     <AppShell title="Resumo diário">
@@ -166,6 +173,14 @@ export default function ResumoDiarioPage() {
                       </tr>
                     )}
                   </tbody>
+                  {diaria.length > 0 && (
+                    <tfoot>
+                      <tr>
+                        <th>Total</th>
+                        <th className="num">R$ {formatMoeda(somar(diaria, (r) => r.valor))}</th>
+                      </tr>
+                    </tfoot>
+                  )}
                 </table>
                 <h3>Comissões do mês (vendas)</h3>
                 <div style={{ overflowX: "auto" }}>
@@ -190,16 +205,7 @@ export default function ResumoDiarioPage() {
                           <td className="num">{formatMoeda(r.comissaoTempoExtra)}</td>
                           <td className="num">{formatMoeda(r.comissao3d)}</td>
                           <td className="num">{formatMoeda(r.comissaoProdutos)}</td>
-                          <td className="num">
-                            {formatMoeda(
-                              r.comissaoVendas != null
-                                ? r.comissaoVendas
-                                : r.comissaoPhoto +
-                                    r.comissaoTempoExtra +
-                                    r.comissao3d +
-                                    r.comissaoProdutos
-                            )}
-                          </td>
+                          <td className="num">{formatMoeda(comissaoVendasLinha(r))}</td>
                         </tr>
                       ))}
                       {mensal.length === 0 && (
@@ -210,6 +216,23 @@ export default function ResumoDiarioPage() {
                         </tr>
                       )}
                     </tbody>
+                    {mensal.length > 0 && (
+                      <tfoot>
+                        <tr>
+                          <th>Total</th>
+                          <th className="num">R$ {formatMoeda(somar(mensal, (r) => r.valor))}</th>
+                          <th className="num">{formatMoeda(somar(mensal, (r) => r.comissaoPhoto))}</th>
+                          <th className="num">
+                            {formatMoeda(somar(mensal, (r) => r.comissaoTempoExtra))}
+                          </th>
+                          <th className="num">{formatMoeda(somar(mensal, (r) => r.comissao3d))}</th>
+                          <th className="num">
+                            {formatMoeda(somar(mensal, (r) => r.comissaoProdutos))}
+                          </th>
+                          <th className="num">{formatMoeda(somar(mensal, comissaoVendasLinha))}</th>
+                        </tr>
+                      </tfoot>
+                    )}
                   </table>
                 </div>
               </>
@@ -274,6 +297,18 @@ export default function ResumoDiarioPage() {
                       </tr>
                     )}
                   </tbody>
+                  {diariaPrime.length > 0 && (
+                    <tfoot>
+                      <tr>
+                        <th>Total</th>
+                        <th className="num">{somar(diariaPrime, (r) => r.qtd)}</th>
+                        <th className="num">R$ {formatMoeda(somar(diariaPrime, (r) => r.valor))}</th>
+                        <th className="num">
+                          R$ {formatMoeda(somar(diariaPrime, (r) => r.comissao))}
+                        </th>
+                      </tr>
+                    </tfoot>
+                  )}
                 </table>
                 <h3>PRIME do mês</h3>
                 <div style={{ overflowX: "auto" }}>
@@ -302,23 +337,19 @@ export default function ResumoDiarioPage() {
                           </td>
                         </tr>
                       )}
-                      {mensalPrime.length > 0 && relatorio ? (
-                        <tr>
-                          <td>
-                            <strong>Total</strong>
-                          </td>
-                          <td className="num">
-                            <strong>{relatorio.totalMensalPrimeQtd}</strong>
-                          </td>
-                          <td className="num">
-                            <strong>R$ {formatMoeda(relatorio.totalMensalPrimeValor)}</strong>
-                          </td>
-                          <td className="num">
-                            <strong>R$ {formatMoeda(relatorio.totalMensalPrimeComissao)}</strong>
-                          </td>
-                        </tr>
-                      ) : null}
                     </tbody>
+                    {mensalPrime.length > 0 && relatorio ? (
+                      <tfoot>
+                        <tr>
+                          <th>Total</th>
+                          <th className="num">{relatorio.totalMensalPrimeQtd}</th>
+                          <th className="num">R$ {formatMoeda(relatorio.totalMensalPrimeValor)}</th>
+                          <th className="num">
+                            R$ {formatMoeda(relatorio.totalMensalPrimeComissao)}
+                          </th>
+                        </tr>
+                      </tfoot>
+                    ) : null}
                   </table>
                 </div>
               </>

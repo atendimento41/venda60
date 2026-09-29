@@ -30,12 +30,14 @@ export default function VendasPeriodoTable({
   modo?: "detalhado" | "simples";
   modoPrime?: boolean;
 }) {
+  const totalQtd = linhas.reduce((s, l) => s + (Number(l.quantidade) || 0), 0);
   const totalValor = linhas.reduce((s, l) => s + (Number(l.valor) || 0), 0);
   const totalDesconto = linhas.reduce((s, l) => s + (Number(l.desconto) || 0), 0);
   const totalComissao = linhas.reduce((s, l) => s + (Number(l.comissao) || 0), 0);
   const temComissao = modoPrime || linhas.some((l) => l.comissao != null);
   const colItem = modo === "simples" ? "Itens" : "Item";
   const rotuloValor = modoPrime ? "Valor venda" : "Valor";
+  const rotuloTotal = `Total (${linhas.length} ${linhas.length === 1 ? "linha" : "linhas"})`;
   const colunas = [
     "Data/hora",
     "Vendedor",
@@ -48,9 +50,10 @@ export default function VendasPeriodoTable({
     ...(temComissao ? ["Comissão"] : []),
   ];
 
-  const rodape = modoPrime
-    ? `Linhas: ${linhas.length} | Total venda PRIME: R$ ${formatMoeda(totalValor)} | Comissão: R$ ${formatMoeda(totalComissao)}`
-    : `Linhas: ${linhas.length} | Desconto: R$ ${formatMoeda(totalDesconto)} | Total: R$ ${formatMoeda(totalValor)}`;
+  const totaisPdf: Array<string | number> = [rotuloTotal, "", "", "", "", totalQtd];
+  if (!modoPrime) totaisPdf.push(`R$ ${formatMoeda(totalDesconto)}`);
+  totaisPdf.push(`R$ ${formatMoeda(totalValor)}`);
+  if (temComissao) totaisPdf.push(`R$ ${formatMoeda(totalComissao)}`);
 
   return (
     <>
@@ -73,7 +76,7 @@ export default function VendasPeriodoTable({
             if (temComissao) base.push(`R$ ${formatMoeda(l.comissao || 0)}`);
             return base;
           })}
-          rodape={rodape}
+          totais={totaisPdf}
           disabled={linhas.length === 0}
         />
       </div>
@@ -118,9 +121,19 @@ export default function VendasPeriodoTable({
               </tr>
             ))}
           </tbody>
+          {linhas.length > 0 && (
+            <tfoot>
+              <tr>
+                <th colSpan={5}>{rotuloTotal}</th>
+                <th className="num">{totalQtd}</th>
+                {!modoPrime ? <th className="num">R$ {formatMoeda(totalDesconto)}</th> : null}
+                <th className="num">R$ {formatMoeda(totalValor)}</th>
+                {temComissao ? <th className="num">R$ {formatMoeda(totalComissao)}</th> : null}
+              </tr>
+            </tfoot>
+          )}
         </table>
       </div>
-      <div className="totals">{rodape}</div>
     </>
   );
 }
