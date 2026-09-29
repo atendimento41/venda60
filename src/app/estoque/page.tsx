@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import AppShell from "@/components/AppShell";
 import ExportPdfButton from "@/components/ExportPdfButton";
+import FiltroItens, { anexarItensQuery, useOpcoesItens } from "@/components/FiltroItens";
 import { formatMoeda, asArray, comprimirFoto } from "@/lib/client";
 
 type Linha = {
@@ -40,6 +41,12 @@ export default function EstoquePage() {
   const [msg, setMsg] = useState("");
   const [fotoSku, setFotoSku] = useState("");
   const [carregando, setCarregando] = useState(false);
+  const [itensSel, setItensSel] = useState<string[]>([]);
+  const qItens = new URLSearchParams({ opcoes: "itens" });
+  if (unidade) qItens.set("unidade", unidade);
+  if (categoria) qItens.set("categoria", categoria);
+  if (subcategoria) qItens.set("subcategoria", subcategoria);
+  const itensOpcoes = useOpcoesItens(`/api/estoque?${qItens}`, itensSel, setItensSel);
 
   useEffect(() => {
     fetch("/api/estoque?opcoes=1")
@@ -60,6 +67,7 @@ export default function EstoquePage() {
     if (filtroEstoque) q.set("estoqueAtual", filtroEstoque);
     if (filtroGeral) q.set("estoqueGeral", filtroGeral);
     if (filtroFoto) q.set("foto", filtroFoto);
+    anexarItensQuery(q, itensSel);
     const d = await fetch(`/api/estoque?${q}`).then((r) => r.json());
     setCarregando(false);
     if (d?.error) {
@@ -174,6 +182,12 @@ export default function EstoquePage() {
             placeholder="Buscar por nome ou SKU"
           />
         </div>
+        <FiltroItens
+          opcoes={itensOpcoes.opcoes}
+          carregando={itensOpcoes.carregando}
+          selecionados={itensSel}
+          onChange={setItensSel}
+        />
         <div className="field">
           <label>Estoque na loja</label>
           <select value={filtroEstoque} onChange={(e) => setFiltroEstoque(e.target.value)}>

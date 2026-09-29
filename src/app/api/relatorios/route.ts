@@ -8,6 +8,7 @@ import {
   getRelatorioVendasPorVendedor,
   getVendaMalucaMesPassado,
   listarCategoriasRelatorio,
+  listarItensFiltroRelatorio,
   listarVendedoresNomes,
 } from "@/services/relatorios";
 import { mensagemErroApi } from "@/lib/api-error";
@@ -19,6 +20,7 @@ export async function GET(req: Request) {
     await ensurePrimeSchema();
     const { searchParams } = new URL(req.url);
     const tipo = searchParams.get("tipo") || "index";
+    const itens = searchParams.getAll("item").filter(Boolean);
 
     if (tipo === "index") {
       return NextResponse.json(
@@ -36,6 +38,7 @@ export async function GET(req: Request) {
           vendedor: searchParams.get("vendedor") || undefined,
           categoria: searchParams.get("categoria") || undefined,
           subcategoria: searchParams.get("subcategoria") || undefined,
+          itens,
         })
       );
     }
@@ -49,6 +52,7 @@ export async function GET(req: Request) {
           vendedor: searchParams.get("vendedor") || undefined,
           categoria: searchParams.get("categoria") || undefined,
           subcategoria: searchParams.get("subcategoria") || undefined,
+          itens,
         })
       );
     }
@@ -62,6 +66,7 @@ export async function GET(req: Request) {
           somenteComSaida:
             searchParams.get("somenteComSaida") !== "0" &&
             searchParams.get("somenteComSaida") !== "false",
+          itens,
         })
       );
     }
@@ -93,6 +98,15 @@ export async function GET(req: Request) {
     }
     if (tipo === "categorias") {
       return NextResponse.json(await listarCategoriasRelatorio());
+    }
+    if (tipo === "itens") {
+      return NextResponse.json(
+        await listarItensFiltroRelatorio({
+          unidade: searchParams.get("unidade"),
+          categoria: searchParams.get("categoria"),
+          subcategoria: searchParams.get("subcategoria"),
+        })
+      );
     }
     if (tipo === "vendedores") {
       return NextResponse.json(await listarVendedoresNomes());

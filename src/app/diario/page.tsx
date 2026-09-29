@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import AppShell from "@/components/AppShell";
 import VendasPeriodoTable, { type VendaPeriodo } from "@/components/VendasPeriodoTable";
+import FiltroItens, { anexarItensQuery, useOpcoesItens } from "@/components/FiltroItens";
 import { hojeISO, UNIDADES, asArray } from "@/lib/client";
 
 export default function RelatorioSimplesPage() {
@@ -15,6 +16,12 @@ export default function RelatorioSimplesPage() {
   const [vendedores, setVendedores] = useState<string[]>([]);
   const [categorias, setCategorias] = useState<Record<string, string[]>>({});
   const [vendas, setVendas] = useState<VendaPeriodo[] | null>(null);
+  const [itensSel, setItensSel] = useState<string[]>([]);
+  const qItens = new URLSearchParams({ tipo: "itens" });
+  if (unidade) qItens.set("unidade", unidade);
+  if (categoria) qItens.set("categoria", categoria);
+  if (subcategoria) qItens.set("subcategoria", subcategoria);
+  const itensOpcoes = useOpcoesItens(`/api/relatorios?${qItens}`, itensSel, setItensSel);
 
   useEffect(() => {
     fetch("/api/relatorios?tipo=vendedores")
@@ -33,6 +40,7 @@ export default function RelatorioSimplesPage() {
     if (vendedor) q.set("vendedor", vendedor);
     if (categoria) q.set("categoria", categoria);
     if (subcategoria) q.set("subcategoria", subcategoria);
+    anexarItensQuery(q, itensSel);
     const d = await fetch(`/api/relatorios?${q}`).then((r) => r.json());
     if (d && !d.error) setVendas(asArray<VendaPeriodo>(d.vendas));
   }
@@ -110,6 +118,12 @@ export default function RelatorioSimplesPage() {
             ))}
           </select>
         </div>
+        <FiltroItens
+          opcoes={itensOpcoes.opcoes}
+          carregando={itensOpcoes.carregando}
+          selecionados={itensSel}
+          onChange={setItensSel}
+        />
       </div>
       <button className="btn" onClick={carregar}>
         Carregar

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import AppShell from "@/components/AppShell";
 import ExportPdfButton from "@/components/ExportPdfButton";
+import FiltroItens, { type OpcaoItem } from "@/components/FiltroItens";
 import { formatMoeda, mesAtualISO, UNIDADES, asArray } from "@/lib/client";
 import { FORMULA_RELATORIO_VENDAS_UNIK, PRECEDENCIA_CUSTO_UNIK } from "@/lib/unik-relatorio";
 
@@ -34,8 +35,9 @@ type Totais = {
 export default function UnikVendasPage() {
   const [mes, setMes] = useState(mesAtualISO());
   const [unidade, setUnidade] = useState("");
-  const [linhas, setLinhas] = useState<Linha[] | null>(null);
-  const [totais, setTotais] = useState<Totais | null>(null);
+  const [linhasApi, setLinhas] = useState<Linha[] | null>(null);
+  const [totaisApi, setTotais] = useState<Totais | null>(null);
+  const [itensSel, setItensSel] = useState<string[]>([]);
   const [erro, setErro] = useState("");
   const [carregando, setCarregando] = useState(false);
 
@@ -57,6 +59,32 @@ export default function UnikVendasPage() {
   useEffect(() => {
     carregar();
   }, [mes, unidade]);
+
+  const opcoesItens: OpcaoItem[] = [];
+  const skusVistos = new Set<string>();
+  for (const l of linhasApi || []) {
+    if (skusVistos.has(l.sku)) continue;
+    skusVistos.add(l.sku);
+    opcoesItens.push({ valor: l.sku, rotulo: l.descricao || l.sku });
+  }
+  opcoesItens.sort((a, b) => a.rotulo.localeCompare(b.rotulo, "pt-BR"));
+  const itensValidos = itensSel.filter((s) => skusVistos.has(s));
+  const selSet = new Set(itensValidos);
+
+  const linhas = linhasApi && selSet.size ? linhasApi.filter((l) => selSet.has(l.sku)) : linhasApi;
+  const somar = (f: (l: Linha) => number) =>
+    Math.round((linhas || []).reduce((s, l) => s + (Number(f(l)) || 0), 0) * 100) / 100;
+  const totais: Totais | null =
+    selSet.size && linhas
+      ? {
+          quantidade: somar((l) => l.quantidade),
+          totalVendido: somar((l) => l.totalVendido),
+          custoUnik: somar((l) => l.custoUnik ?? 0),
+          custo60: somar((l) => l.custo60),
+          lucroUnik: somar((l) => l.lucroUnik),
+          lucro60: somar((l) => l.lucro60),
+        }
+      : totaisApi;
 
   return (
     <AppShell title="UNIK · Relatório vendas">
@@ -86,6 +114,7 @@ export default function UnikVendasPage() {
             ))}
           </select>
         </div>
+        <FiltroItens opcoes={opcoesItens} selecionados={itensValidos} onChange={setItensSel} />
       </div>
       <div className="btn-row">
         <button className="btn" onClick={carregar} disabled={carregando}>

@@ -179,12 +179,15 @@ export async function getEstoqueConsulta(filtros: {
   estoqueGeral?: string | null;
   /** sem = sem foto; com = com foto; vazio = todos. */
   foto?: string | null;
+  /** SKUs escolhidos no filtro de itens; vazio = todos. */
+  itens?: string[];
 }) {
   const unidadeF = normalizeUpper(filtros.unidade || "");
   const catF = normalizeUpper(filtros.categoria || "");
   const subF = normalizeUpper(filtros.subcategoria || "");
   const nomeF = normalizeUpper(filtros.nome || "");
   const geral = normalizeUpper("GERAL");
+  const skusSel = new Set((filtros.itens || []).map((s) => normalizeUpper(s)).filter(Boolean));
 
   const allItens = await db.select().from(itens).where(eq(itens.ativo, true));
   const itemPorSku = Object.fromEntries(allItens.map((i) => [normalizeUpper(i.sku), i]));
@@ -352,6 +355,7 @@ export async function getEstoqueConsulta(filtros: {
         normalizeUpper(l.item).includes(nomeF) || normalizeUpper(l.sku).includes(nomeF)
     );
   }
+  if (skusSel.size) linhas = linhas.filter((l) => skusSel.has(normalizeUpper(l.sku)));
 
   registrarLogConsulta(LOG_TIPO.CONSULTA_ESTOQUE, filtros, "Consulta estoque operacional");
   return {

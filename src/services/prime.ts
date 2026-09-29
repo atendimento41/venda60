@@ -117,10 +117,14 @@ export async function getRelatorioPrimeFiltrado(filtros: {
   unidade?: string;
   vendedor?: string;
   subcategoria?: string;
+  /** Níveis escolhidos no filtro de itens (ELITE, PLATINA, OURO); vazio = todos. */
+  itens?: string[];
 }) {
   await ensurePrimeSchema();
+  const niveisSel = new Set((filtros.itens || []).map((s) => normalizeUpper(s)).filter(Boolean));
   const rows = await db.select().from(primeVendas).orderBy(desc(primeVendas.id));
   const filtradas = rows.filter((row) => {
+    if (niveisSel.size && !niveisSel.has(getNivelPrime(row.nivel || row.item))) return false;
     if (!primeAberta(row.status)) return false;
     const ymd = dataYmd(row.data);
     if (filtros.dataInicio && ymd < filtros.dataInicio) return false;

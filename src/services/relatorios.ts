@@ -23,7 +23,7 @@ import {
   listarVendasNoPeriodo,
 } from "@/lib/vendas-db";
 import { consultarVendasMensalMV, ensureVendasMensalMV } from "@/lib/materialized-views";
-import { comissaoPrimeQtd, valorVendaPrime } from "@/services/prime";
+import { comissaoPrimeQtd, getNivelPrime, valorVendaPrime } from "@/services/prime";
 
 const CATEGORIA_PRIME = "PRIME";
 
@@ -257,8 +257,11 @@ export async function getRelatorioFiltrado(filtros: {
   vendedor?: string;
   categoria?: string;
   subcategoria?: string;
+  /** SKUs (ou níveis PRIME) escolhidos no filtro de itens; vazio = todos. */
+  itens?: string[];
 }) {
   const isPrime = normalizeUpper(filtros.categoria) === CATEGORIA_PRIME;
+  const itensSel = conjuntoItensFiltro(filtros.itens);
 
   if (isPrime) {
     const primeRows = await db.select().from(primeVendas);
@@ -275,6 +278,8 @@ export async function getRelatorioFiltrado(filtros: {
         filtros.subcategoria &&
         normalizeUpper(row.nivel || "") !== normalizeUpper(filtros.subcategoria)
       )
+        return false;
+      if (itensSel && !itensSel.has(normalizeUpper(getNivelPrime(row.nivel || row.item))))
         return false;
       return true;
     });
@@ -331,6 +336,7 @@ export async function getRelatorioFiltrado(filtros: {
       normalizeUpper(row.subcategoria) !== normalizeUpper(filtros.subcategoria)
     )
       return false;
+    if (itensSel && !itensSel.has(normalizeUpper(row.sku))) return false;
     return true;
   });
 
@@ -409,6 +415,7 @@ export async function getRelatorioSimples(filtros: {
   vendedor?: string;
   categoria?: string;
   subcategoria?: string;
+  itens?: string[];
 }) {
   const dataInicio = filtros.dataInicio || filtros.data || hojeISO();
   const dataFim = filtros.dataFim || filtros.data || dataInicio;
@@ -419,6 +426,7 @@ export async function getRelatorioSimples(filtros: {
     vendedor: filtros.vendedor,
     categoria: filtros.categoria,
     subcategoria: filtros.subcategoria,
+    itens: filtros.itens,
   });
 
   const linhasDetalhe = (result.vendas || []) as Array<{
@@ -508,6 +516,65 @@ export async function getVendasDoDia(filtros: {
   return result.vendas;
 }
 
+export type OpcaoItemFiltro = { valor: string; rotulo: string };
+
+/** Conjunto normalizado dos itens escolhidos no filtro; null = sem filtro (todos). */
+export function conjuntoItensFiltro(itensSel?: string[] | null): Set<string> | null {
+  const lista = (itensSel || []).map((s) => normalizeUpper(s)).filter(Boolean);
+  return lista.length ? new Set(lista) : null;
+}
+
+/** Opções do filtro "Itens" respeitando unidade, categoria e subcategoria. */
+export async function listarItensFiltroRelatorio(filtros: {
+  unidade?: string | null;
+  categoria?: string | null;
+  subcategoria?: string | null;
+  somenteAtivos?: boolean;
+}): Promise<OpcaoItemFiltro[]> {
+  const unidadeF = normalizeUpper(filtros.unidade || "");
+  const catF = normalizeUpper(filtros.categoria || "");
+  const subF = normalizeUpper(filtros.subcategoria || "");
+
+  if (catF === CATEGORIA_PRIME) {
+    return ["ELITE", "PLATINA", "OURO"]
+      .filter((n) => !subF || n === subF)
+      .map((n) => ({ valor: n, rotulo: n }));
+  }
+
+  const allItens = await db.select().from(itens);
+  let skusUnidade: Set<string> | null = null;
+  if (unidadeF) {
+    const estRows = await db.select().from(estoque);
+    skusUnidade = new Set(
+      estRows.filter((r) => normalizeUpper(r.unidade) === unidadeF).map((r) => normalizeUpper(r.sku))
+    );
+  }
+
+  const vistos = new Set<string>();
+  const opcoes: Array<OpcaoItemFiltro & { ativo: boolean }> = [];
+  for (const item of allItens) {
+    const up = normalizeUpper(item.sku);
+    if (!up || vistos.has(up)) continue;
+    if (filtros.somenteAtivos && !item.ativo) continue;
+    if (catF && normalizeUpper(item.categoriaDash) !== catF) continue;
+    if (subF && normalizeUpper(item.subcategoriaMeep) !== subF) continue;
+    if (skusUnidade && !item.ilimitado && !skusUnidade.has(up)) continue;
+    vistos.add(up);
+    const nome = normalizeText(item.descricao) || item.sku;
+    opcoes.push({
+      valor: item.sku,
+      rotulo: item.ativo ? nome : `${nome} (inativo)`,
+      ativo: Boolean(item.ativo),
+    });
+  }
+
+  opcoes.sort((a, b) => {
+    if (a.ativo !== b.ativo) return a.ativo ? -1 : 1;
+    return a.rotulo.localeCompare(b.rotulo, "pt-BR");
+  });
+  return opcoes.map(({ valor, rotulo }) => ({ valor, rotulo }));
+}
+
 export async function listarCategoriasRelatorio() {
   const allItens = await db.select().from(itens).where(eq(itens.ativo, true));
   const map: Record<string, Set<string>> = {};
@@ -532,11 +599,13 @@ export async function getRelatorioSaidasMensal(filtros: {
   categoria?: string | null;
   subcategoria?: string | null;
   somenteComSaida?: boolean | string | number;
+  itens?: string[];
 }) {
   const periodo = parseMesFiltro(filtros.mes);
   const unidadeF = normalizeUpper(filtros.unidade || "");
   const catF = normalizeUpper(filtros.categoria || "");
   const subF = normalizeUpper(filtros.subcategoria || "");
+  const itensSel = conjuntoItensFiltro(filtros.itens);
   const somenteComSaida =
     filtros.somenteComSaida === true ||
     filtros.somenteComSaida === "true" ||
@@ -598,6 +667,11 @@ export async function getRelatorioSaidasMensal(filtros: {
 
   const chaves = new Set<string>(Object.keys(saidasMes));
   if (!somenteComSaida) Object.keys(estoqueAtual).forEach((k) => chaves.add(k));
+  if (itensSel) {
+    for (const k of [...chaves]) {
+      if (!itensSel.has(k.split("||")[0])) chaves.delete(k);
+    }
+  }
 
   const linhas = [];
   let totalSaidas = 0;

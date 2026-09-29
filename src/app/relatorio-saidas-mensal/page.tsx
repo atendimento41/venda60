@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import AppShell from "@/components/AppShell";
 import ExportPdfButton from "@/components/ExportPdfButton";
+import FiltroItens, { anexarItensQuery, useOpcoesItens } from "@/components/FiltroItens";
 import { mesAtualISO, asArray } from "@/lib/client";
 
 type LinhaSaida = {
@@ -24,6 +25,12 @@ export default function SaidasMensalPage() {
   const [subcategoria, setSubcategoria] = useState("");
   const [somenteComSaida, setSomenteComSaida] = useState("1");
   const [res, setRes] = useState<{ mesRotulo: string; linhas: LinhaSaida[]; totalSaidas: number; totalEstoqueInicio: number; totalEstoqueFinal: number } | null>(null);
+  const [itensSel, setItensSel] = useState<string[]>([]);
+  const qItens = new URLSearchParams({ tipo: "itens" });
+  if (unidade) qItens.set("unidade", unidade);
+  if (categoria) qItens.set("categoria", categoria);
+  if (subcategoria) qItens.set("subcategoria", subcategoria);
+  const itensOpcoes = useOpcoesItens(`/api/relatorios?${qItens}`, itensSel, setItensSel);
 
   useEffect(() => {
     fetch("/api/estoque?opcoes=1").then((r) => r.json()).then(setOpcoes);
@@ -34,6 +41,7 @@ export default function SaidasMensalPage() {
     if (unidade) q.set("unidade", unidade);
     if (categoria) q.set("categoria", categoria);
     if (subcategoria) q.set("subcategoria", subcategoria);
+    anexarItensQuery(q, itensSel);
     const d = await fetch(`/api/relatorios?${q}`).then((r) => r.json());
     if (d && !d.error && Array.isArray(d.linhas)) setRes(d);
   }
@@ -51,7 +59,7 @@ export default function SaidasMensalPage() {
           </select>
         </div>
         <div className="field"><label>Categoria</label>
-          <select value={categoria} onChange={(e) => setCategoria(e.target.value)}>
+          <select value={categoria} onChange={(e) => { setCategoria(e.target.value); setSubcategoria(""); }}>
             <option value="">Todas</option>
             {Object.keys(opcoes.categoriasRaw).map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
@@ -68,6 +76,12 @@ export default function SaidasMensalPage() {
             <option value="0">Todos</option>
           </select>
         </div>
+        <FiltroItens
+          opcoes={itensOpcoes.opcoes}
+          carregando={itensOpcoes.carregando}
+          selecionados={itensSel}
+          onChange={setItensSel}
+        />
       </div>
       <div className="btn-row">
         <button className="btn" onClick={carregar}>Carregar</button>

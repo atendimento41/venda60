@@ -8,6 +8,7 @@ import {
   listarLinhasEstoqueAdmin,
 } from "@/services/estoque";
 import { getOpcoesAdminEstoque } from "@/services/itens";
+import { listarItensFiltroRelatorio } from "@/services/relatorios";
 import { ensureItensSchema } from "@/lib/ensure-schema";
 import { mensagemErroApi } from "@/lib/api-error";
 
@@ -21,6 +22,16 @@ export async function GET(req: Request) {
     if (opcoes === "admin") {
       return NextResponse.json(await getOpcoesAdminEstoque());
     }
+    if (opcoes === "itens") {
+      return NextResponse.json(
+        await listarItensFiltroRelatorio({
+          unidade: searchParams.get("unidade"),
+          categoria: searchParams.get("categoria"),
+          subcategoria: searchParams.get("subcategoria"),
+          somenteAtivos: true,
+        })
+      );
+    }
     if (opcoes) {
       return NextResponse.json(await getOpcoesFiltrosEstoque());
     }
@@ -33,6 +44,7 @@ export async function GET(req: Request) {
       estoqueAtual: searchParams.get("estoqueAtual") || undefined,
       estoqueGeral: searchParams.get("estoqueGeral") || undefined,
       foto: searchParams.get("foto") || undefined,
+      itens: searchParams.getAll("item").filter(Boolean),
     };
 
     if (admin) {

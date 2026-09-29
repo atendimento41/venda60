@@ -21,6 +21,7 @@ export async function GET(req: Request) {
       unidade: searchParams.get("unidade") || undefined,
       vendedor: searchParams.get("vendedor") || undefined,
       subcategoria: searchParams.get("subcategoria") || undefined,
+      itens: searchParams.getAll("item").filter(Boolean),
     };
     return NextResponse.json(await getRelatorioPrimeFiltrado(filtros));
   } catch (e) {
