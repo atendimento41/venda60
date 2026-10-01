@@ -541,8 +541,10 @@ export type NomeUnikAnterior = {
 /** Nomes já lançados para a busca do UNIK · Lançar (nome, item ou SKU). */
 export async function buscarNomesUnikAnteriores(q: string): Promise<{ nomes: NomeUnikAnterior[] }> {
   await ensureUnikSchema();
-  const termo = chaveNomeItem(q);
+  const semAcento = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const termo = semAcento(chaveNomeItem(q));
   if (termo.length < 2) return { nomes: [] };
+  const palavras = termo.split(" ").filter(Boolean);
   const ctx = await contextoUnik();
   const entregas = await db
     .select({
@@ -604,14 +606,15 @@ export async function buscarNomesUnikAnteriores(q: string): Promise<{ nomes: Nom
     const item = g.sku ? ctx.itemPorSku[normalizeUpper(g.sku)] : undefined;
     const itemValido = Boolean(item && item.ativo && campoEhUnik3d(item.subcategoriaMeep));
     const descricaoItem = itemValido ? item!.descricao : "";
-    const alvo = `${chave} ${chaveNomeItem(descricaoItem)} ${itemValido ? normalizeUpper(g.sku) : ""}`;
-    if (!alvo.includes(termo)) continue;
+    const nomeBusca = semAcento(chave);
+    const alvo = semAcento(`${chave} ${chaveNomeItem(descricaoItem)} ${itemValido ? normalizeUpper(g.sku) : ""}`);
+    if (!palavras.every((p) => alvo.includes(p))) continue;
     const { skuDefinido: _ignorar, ...resto } = g;
     nomes.push({
       ...resto,
       sku: itemValido ? item!.sku : "",
       descricaoItem,
-      ordem: chave === termo ? 0 : chave.startsWith(termo) ? 1 : chave.includes(termo) ? 2 : 3,
+      ordem: nomeBusca === termo ? 0 : nomeBusca.startsWith(termo) ? 1 : nomeBusca.includes(termo) ? 2 : 3,
     });
   }
   nomes.sort((a, b) => a.ordem - b.ordem);
