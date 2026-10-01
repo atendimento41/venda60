@@ -69,6 +69,8 @@ export async function emitirSsoToken(
 }
 
 export async function lerSsoToken(token: string | null | undefined): Promise<SsoPayload | null> {
+  // O segredo padrão está no código: em produção aceitá-lo deixaria qualquer um forjar o login.
+  if (process.env.VERCEL && !ssoConfigurado()) return null;
   if (!token || !token.includes(".")) return null;
   const [body, sig] = token.split(".");
   if (!body || !sig) return null;
