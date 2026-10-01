@@ -350,6 +350,7 @@ export async function listarLancamentosUnik(filtros?: {
   nome?: string;
   item?: string;
   categoria?: string;
+  sku?: string;
 }) {
   const ctx = await contextoUnik();
   const entregas = await db.select().from(entregaUnik).orderBy(desc(entregaUnik.id));
@@ -360,9 +361,15 @@ export async function listarLancamentosUnik(filtros?: {
   const nomeF = chaveNomeItem(filtros?.nome);
   const itemF = normalizeUpper(filtros?.item);
   const catF = chaveNomeItem(filtros?.categoria);
+  const skuF = normalizeUpper(filtros?.sku);
   const todos = Boolean(filtros?.todos);
 
+  /** SKU gravado no lançamento ou, sem ele, o do vínculo pelo nome (mesma regra do custo do cadastro). */
+  const skuEfetivo = (row: { sku: string | null; nome: string | null }) =>
+    normalizeUpper(normalizeText(row.sku) || ctx.skuPorChave[chaveNomeItem(normalizeText(row.nome))] || "");
+
   let filtradas = entregas;
+  if (skuF) filtradas = filtradas.filter((row) => skuEfetivo(row).includes(skuF));
   if (soCustoZero) filtradas = filtradas.filter((row) => !(Number(row.custo) > 0));
   if (soSugestaoZero) filtradas = filtradas.filter((row) => !(Number(row.sugestaoVenda) > 0));
   if (nomeF) {
@@ -388,7 +395,43 @@ export async function listarLancamentosUnik(filtros?: {
 
   const categorias = await listarCategoriasUnik();
 
-  if (!todos && !soCustoZero && !soSugestaoZero && !nomeF && !catF) {
+  let resumoSku: ResumoSkuUnik | null = null;
+  if (skuF) {
+    const achados = new Set(filtradas.map(skuEfetivo).filter(Boolean));
+    const alvo = ctx.itemPorSku[skuF] ? skuF : achados.size === 1 ? [...achados][0]! : "";
+    if (alvo) {
+      const item = ctx.itemPorSku[alvo];
+      let custoMaxLancamentos = 0;
+      let idsMaiorCusto: number[] = [];
+      let lancamentos = 0;
+      for (const row of entregas) {
+        if (skuEfetivo(row) !== alvo) continue;
+        if (classificarStatusUnik(row.status, row.tipo) === "ENCOMENDA") continue;
+        lancamentos++;
+        const unit = custoUnitarioLancamento(Number(row.custo) || 0, Number(row.quantidade) || 1, false);
+        if (unit <= 0) continue;
+        if (unit > custoMaxLancamentos) {
+          custoMaxLancamentos = unit;
+          idsMaiorCusto = [row.id];
+        } else if (unit === custoMaxLancamentos) {
+          idsMaiorCusto.push(row.id);
+        }
+      }
+      resumoSku = {
+        sku: item?.sku || alvo,
+        descricao: item?.descricao || "",
+        noCadastro: Boolean(item),
+        custoCadastro: Number(item?.custo) || 0,
+        sugestaoCadastro: Number(item?.sugestaoVenda) || 0,
+        precoCadastro: Number(item?.preco) || 0,
+        lancamentos,
+        custoMaxLancamentos,
+        idsMaiorCusto,
+      };
+    }
+  }
+
+  if (!todos && !soCustoZero && !soSugestaoZero && !nomeF && !catF && !skuF) {
     let ultimaYmd = "";
     for (const row of entregas) {
       const y = dataYmd(row.data || "");
@@ -409,8 +452,25 @@ export async function listarLancamentosUnik(filtros?: {
     dataFmt: todos ? "todos" : [soCustoZero ? "custo 0" : "", soSugestaoZero ? "sugestão 0" : ""].filter(Boolean).join(" · "),
     lancamentos: filtradas.map((row) => lancamentoDeRow(row, ctx)),
     categorias,
+    resumoSku,
   };
 }
+
+/** De onde sai o "Custo UNIK" do relatório de vendas para um SKU. */
+export type ResumoSkuUnik = {
+  sku: string;
+  descricao: string;
+  noCadastro: boolean;
+  /** Valor que o relatório de vendas usa (itens.custo). */
+  custoCadastro: number;
+  sugestaoCadastro: number;
+  precoCadastro: number;
+  /** Lançamentos (sem encomendas) deste SKU. */
+  lancamentos: number;
+  /** O cadastro é recalculado como o MAIOR custo unitário entre esses lançamentos. */
+  custoMaxLancamentos: number;
+  idsMaiorCusto: number[];
+};
 
 export async function listarLancamentosUltimaData() {
   return listarLancamentosUnik();

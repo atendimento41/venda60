@@ -51,6 +51,7 @@ export async function GET(req: Request) {
           nome: searchParams.get("nome") || undefined,
           item: searchParams.get("item") || undefined,
           categoria: searchParams.get("categoria") || undefined,
+          sku: searchParams.get("sku") || undefined,
         })
       );
     }

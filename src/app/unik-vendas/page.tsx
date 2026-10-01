@@ -90,7 +90,9 @@ export default function UnikVendasPage() {
     <AppShell title="UNIK · Relatório vendas">
       <div className="unik-formula-help muted">
         <p>Relatório mensal · subcategoria UNIK 3D. Como calcular cada coluna:</p>
-        <p>{PRECEDENCIA_CUSTO_UNIK}</p>
+        <p>
+          {PRECEDENCIA_CUSTO_UNIK} Custo errado? Clique no SKU para abrir os lançamentos UNIK dele e corrigir.
+        </p>
         <ol>
           {FORMULA_RELATORIO_VENDAS_UNIK.map((linha) => (
             <li key={linha}>{linha}</li>
@@ -204,7 +206,18 @@ export default function UnikVendasPage() {
                     <td>{l.fotoUrl ? <img className="foto-thumb" src={l.fotoUrl} alt="" /> : "—"}</td>
                     <td>{l.dataFmt}</td>
                     <td>{l.unidade || "—"}</td>
-                    <td>{l.sku}</td>
+                    <td>
+                      {l.sku ? (
+                        <a
+                          href={`/unik-editar-lancamento?sku=${encodeURIComponent(l.sku)}`}
+                          title="Abrir os lançamentos UNIK deste SKU (custo e sugestão)"
+                        >
+                          {l.sku}
+                        </a>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
                     <td>{l.descricao}</td>
                     <td className="num">R$ {formatMoeda(l.valorVenda)}</td>
                     <td className="num">{l.quantidade}</td>

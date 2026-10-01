@@ -24,6 +24,18 @@ type Mov = {
   categoria?: string;
 };
 
+type ResumoSku = {
+  sku: string;
+  descricao: string;
+  noCadastro: boolean;
+  custoCadastro: number;
+  sugestaoCadastro: number;
+  precoCadastro: number;
+  lancamentos: number;
+  custoMaxLancamentos: number;
+  idsMaiorCusto: number[];
+};
+
 function moneyInput(n: number | undefined) {
   const v = Number(n) || 0;
   return v ? formatMoeda(v) : "";
@@ -42,6 +54,8 @@ export default function EditarLancamentoUnikPage() {
   const [msg, setMsg] = useState("");
   const [busca, setBusca] = useState("");
   const [buscaItem, setBuscaItem] = useState("");
+  const [buscaSku, setBuscaSku] = useState("");
+  const [resumoSku, setResumoSku] = useState<ResumoSku | null>(null);
   const [filtroCusto, setFiltroCusto] = useState("");
   const [filtroSugestao, setFiltroSugestao] = useState("");
   const [filtroCategoria, setFiltroCategoria] = useState("");
@@ -76,7 +90,8 @@ export default function EditarLancamentoUnikPage() {
     sugestaoF = filtroSugestao,
     nomeF = busca,
     itemF = buscaItem,
-    catF = filtroCategoria
+    catF = filtroCategoria,
+    skuF = buscaSku
   ) {
     const q = new URLSearchParams({ tipo: "lancamentos", todos: "1" });
     if (custoF) q.set("custo", custoF);
@@ -84,18 +99,22 @@ export default function EditarLancamentoUnikPage() {
     if (nomeF.trim()) q.set("nome", nomeF.trim());
     if (itemF.trim()) q.set("item", itemF.trim());
     if (catF.trim()) q.set("categoria", catF.trim());
+    if (skuF.trim()) q.set("sku", skuF.trim());
     const d = await fetch(`/api/unik?${q}`).then((r) => r.json());
     if (d?.error) {
       setErro(d.error);
       return;
     }
     setLista(asArray(d.lancamentos) as Mov[]);
+    setResumoSku((d.resumoSku as ResumoSku | null) || null);
     if (Array.isArray(d.categorias)) setCategorias(d.categorias as string[]);
     setSel(new Set());
   }
 
   useEffect(() => {
-    carregar();
+    const skuUrl = new URLSearchParams(window.location.search).get("sku") || "";
+    if (skuUrl) setBuscaSku(skuUrl);
+    carregar(filtroCusto, filtroSugestao, busca, buscaItem, filtroCategoria, skuUrl);
   }, []);
 
   const idsVisiveis = useMemo(() => lista.map((m) => m.id), [lista]);
@@ -332,6 +351,17 @@ export default function EditarLancamentoUnikPage() {
 
       <div className="filters">
         <div className="field">
+          <label>SKU</label>
+          <input
+            value={buscaSku}
+            onChange={(e) => setBuscaSku(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") carregar();
+            }}
+            placeholder="Ex.: UNIK-0123"
+          />
+        </div>
+        <div className="field">
           <label>Nome UNIK / quem recebeu</label>
           <input
             value={busca}
@@ -360,7 +390,7 @@ export default function EditarLancamentoUnikPage() {
             onChange={(e) => {
               const v = e.target.value;
               setFiltroCategoria(v);
-              carregar(filtroCusto, filtroSugestao, busca, buscaItem, v);
+              carregar(filtroCusto, filtroSugestao, busca, buscaItem, v, buscaSku);
             }}
           >
             <option value="">Todas</option>
@@ -378,7 +408,7 @@ export default function EditarLancamentoUnikPage() {
             onChange={(e) => {
               const v = e.target.value;
               setFiltroCusto(v);
-              carregar(v, filtroSugestao, busca, buscaItem, filtroCategoria);
+              carregar(v, filtroSugestao, busca, buscaItem, filtroCategoria, buscaSku);
             }}
           >
             <option value="">Todos</option>
@@ -392,7 +422,7 @@ export default function EditarLancamentoUnikPage() {
             onChange={(e) => {
               const v = e.target.value;
               setFiltroSugestao(v);
-              carregar(filtroCusto, v, busca, buscaItem, filtroCategoria);
+              carregar(filtroCusto, v, busca, buscaItem, filtroCategoria, buscaSku);
             }}
           >
             <option value="">Todas</option>
@@ -515,6 +545,54 @@ export default function EditarLancamentoUnikPage() {
       {msg && <p className="msg-ok">{msg}</p>}
       {erro && <p className="msg-erro">{erro}</p>}
 
+      {resumoSku ? (
+        <section className="dash-card" style={{ marginBottom: 16 }}>
+          <h2 style={{ marginTop: 0 }}>
+            {resumoSku.sku}
+            {resumoSku.descricao ? ` · ${resumoSku.descricao}` : ""}
+          </h2>
+          {!resumoSku.noCadastro ? (
+            <p className="msg-erro" style={{ marginTop: 0 }}>
+              Este SKU não está no cadastro de itens — o relatório de vendas fica sem custo UNIK para ele.
+            </p>
+          ) : (
+            <p style={{ marginTop: 0 }}>
+              Custo UNIK usado no Relatório vendas (cadastro do item):{" "}
+              <strong>R$ {formatMoeda(resumoSku.custoCadastro)}</strong>
+              {" · "}Sugestão no cadastro: R$ {formatMoeda(resumoSku.sugestaoCadastro)}
+              {" · "}Preço no cadastro: R$ {formatMoeda(resumoSku.precoCadastro)}
+            </p>
+          )}
+          {resumoSku.lancamentos === 0 ? (
+            <p className="muted">
+              Nenhum lançamento UNIK com este SKU: o custo vem só do <a href="/cadastro-itens">Cadastro de itens</a> —
+              corrija lá.
+            </p>
+          ) : (
+            <p className="muted">
+              O cadastro é recalculado como o <strong>maior custo unitário</strong> entre os {resumoSku.lancamentos}{" "}
+              lançamento(s) deste SKU (hoje R$ {formatMoeda(resumoSku.custoMaxLancamentos)}). Para corrigir o
+              custo do relatório, edite o(s) lançamento(s) marcado(s) <strong>“define o custo UNIK”</strong> abaixo e
+              salve — o cadastro é atualizado na hora.
+            </p>
+          )}
+          {resumoSku.noCadastro &&
+          resumoSku.lancamentos > 0 &&
+          resumoSku.custoMaxLancamentos > 0 &&
+          Math.abs(resumoSku.custoCadastro - resumoSku.custoMaxLancamentos) >= 0.01 ? (
+            <p className="msg-erro">
+              O cadastro (R$ {formatMoeda(resumoSku.custoCadastro)}) está diferente do maior custo dos lançamentos
+              (R$ {formatMoeda(resumoSku.custoMaxLancamentos)}). Ao salvar qualquer lançamento deste SKU, o cadastro
+              passa a R$ {formatMoeda(resumoSku.custoMaxLancamentos)}.
+            </p>
+          ) : null}
+          <p className="muted" style={{ marginBottom: 0 }}>
+            O <strong>valor de venda</strong> do relatório é o preço registrado em cada venda: mudar custo/sugestão
+            aqui não altera vendas já feitas — para isso use <a href="/solicitar-edicao">Solicitar edição</a>.
+          </p>
+        </section>
+      ) : null}
+
       {lista.length === 0 ? (
         <p className="muted">Nenhum lançamento neste filtro.</p>
       ) : (
@@ -538,10 +616,17 @@ export default function EditarLancamentoUnikPage() {
                         · encomenda
                       </span>
                     ) : null}
+                    {resumoSku?.idsMaiorCusto.includes(m.id) ? (
+                      <span className="msg-erro" style={{ fontSize: 13, fontWeight: 600 }}>
+                        {" "}
+                        · define o custo UNIK
+                      </span>
+                    ) : null}
                   </h2>
                   <p className="muted" style={{ margin: "6px 0 0" }}>
                     {m.dataFmt} · {m.unidade || "—"} · {m.status || m.tipo} · Qtd {m.quantidade}
                     {m.categoria ? ` · ${m.categoria}` : " · Sem categoria"}
+                    {m.sku ? ` · ${m.sku}` : ""}
                     {m.descricaoItem ? ` · ${m.descricaoItem}` : ""}
                     {` · Custo R$ ${formatMoeda(m.custo || 0)}`}
                     {` · Sugestão R$ ${formatMoeda(m.sugestaoVenda || 0)}`}
