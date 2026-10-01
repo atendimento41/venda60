@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getClient } from "@/db";
 import { cookieSessao, criarTokenSessao } from "@/lib/session";
 import { paginasVendas, primeiraPagina, temAcessoVendas } from "@/lib/roles";
-import { lerSsoToken } from "@/lib/sso";
+import { ERRO_SSO_CONFIG, ERRO_SSO_TOKEN, ERRO_SSO_USUARIO, lerSsoToken, ssoConfigurado } from "@/lib/sso";
 import { ensureUsuariosTable } from "@/lib/ensure-usuarios";
 import { parseUnidadesJson } from "@/services/vendedores";
 
@@ -31,23 +31,26 @@ async function dadosSessaoDb(
   }
 }
 
+function paraLogin(req: Request, erro: string) {
+  const u = new URL("/login", req.url);
+  u.searchParams.set("erro", erro);
+  return NextResponse.redirect(u);
+}
+
 export async function GET(req: Request) {
+  if (process.env.VERCEL && !ssoConfigurado()) return paraLogin(req, ERRO_SSO_CONFIG);
   const url = new URL(req.url);
   const token = url.searchParams.get("token");
   const payload = await lerSsoToken(token);
-  if (!payload || payload.modulo !== "venda60") {
-    return NextResponse.redirect(new URL("/login?erro=sso", req.url));
-  }
+  if (!payload || payload.modulo !== "venda60") return paraLogin(req, ERRO_SSO_TOKEN);
 
   const paginas = paginasVendas(payload.paginas);
   if (!temAcessoVendas(paginas)) {
-    return NextResponse.redirect(new URL("/login?erro=perm", req.url));
+    return paraLogin(req, "Seu usuário não tem permissão no Vendas (ajuste no Hub).");
   }
 
   const db = await dadosSessaoDb(payload.sub);
-  if (!db.ok) {
-    return NextResponse.redirect(new URL("/login?erro=sso", req.url));
-  }
+  if (!db.ok) return paraLogin(req, ERRO_SSO_USUARIO);
 
   const sessao = await criarTokenSessao({
     id: payload.sub,

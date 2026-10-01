@@ -5,8 +5,6 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { GRUPOS_NAV } from "@/lib/roles";
 
-const HUB_URL = process.env.NEXT_PUBLIC_HUB_URL || "https://hub60.vercel.app";
-
 type LinkItem = { href: string; label: string };
 type Me = {
   usuario: { nome: string; login: string };
@@ -249,7 +247,7 @@ export default function AppShell({
         className={`sidebar${collapsed ? " collapsed" : ""}${mobileOpen ? " open" : ""}`}
       >
         <div className="sidebar-brand">
-          <a className="brand-link" href={HUB_URL} title="Voltar ao Hub">
+          <a className="brand-link" href="/api/sso/hub" title="Voltar ao Hub">
             <img className="brand-logo" src="/logo-60.png" alt="60 Minutos Escape the Game" />
           </a>
           <div className="mark">

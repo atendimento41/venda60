@@ -8,7 +8,7 @@ export type SsoPayload = {
   nome: string;
   paginas: string[] | "*";
   unidades: string[];
-  modulo: "venda60" | "omie_lancamento" | "financeiro-60";
+  modulo: "venda60" | "omie_lancamento" | "financeiro-60" | "hub";
   exp: number;
 };
 
@@ -90,4 +90,13 @@ export async function lerSsoToken(token: string | null | undefined): Promise<Sso
 
 export function ssoConfigurado(): boolean {
   return Boolean(process.env.SSO_SECRET && process.env.SSO_SECRET !== DEFAULT_SSO);
+}
+
+export const ERRO_SSO_CONFIG = "Login único desligado neste módulo: falta SSO_SECRET na Vercel (o mesmo valor do Hub).";
+export const ERRO_SSO_TOKEN =
+  "Link do Hub inválido ou expirado (SSO_SECRET diferente do Hub?). Entre com usuário e senha.";
+export const ERRO_SSO_USUARIO = "Usuário inativo ou não encontrado.";
+
+export function hubUrl(): string {
+  return (process.env.NEXT_PUBLIC_HUB_URL || "https://hub60.vercel.app").replace(/\/$/, "");
 }

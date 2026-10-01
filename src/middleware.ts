@@ -15,6 +15,7 @@ const PUBLIC_APIS = [
   "/api/auth/google",
   "/api/health",
   "/api/sso/consume",
+  "/api/sso/hub",
 ];
 
 function withSecurityHeaders(res: NextResponse): NextResponse {
