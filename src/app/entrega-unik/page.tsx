@@ -22,6 +22,22 @@ type Mov = {
   categoria?: string;
 };
 
+type NomeAnterior = {
+  nome: string;
+  ultimaDataFmt: string;
+  lancamentos: number;
+  custo: number;
+  sugestaoVenda: number;
+  categoria: string;
+  sku: string;
+  descricaoItem: string;
+  temFoto: boolean;
+};
+
+function chaveNome(s: string) {
+  return s.toUpperCase().replace(/\s+/g, " ").trim();
+}
+
 function moneyInput(n: number | undefined) {
   const v = Number(n) || 0;
   return v ? formatMoeda(v) : "";
@@ -45,7 +61,88 @@ export default function EntregaUnikPage() {
   const [erro, setErro] = useState("");
   const [ultimaDataFmt, setUltimaDataFmt] = useState("");
   const [lancamentos, setLancamentos] = useState<Mov[]>([]);
+  const [sugestoes, setSugestoes] = useState<NomeAnterior[]>([]);
+  const [listaAberta, setListaAberta] = useState(false);
+  const [ativoIdx, setAtivoIdx] = useState(0);
+  const [escolhido, setEscolhido] = useState<NomeAnterior | null>(null);
+  const [novoConfirmado, setNovoConfirmado] = useState(false);
   const { busy, run } = useSubmitLock();
+
+  useEffect(() => {
+    const q = nome.trim();
+    if (escolhido || q.length < 2) {
+      setSugestoes([]);
+      return;
+    }
+    let cancelado = false;
+    const t = setTimeout(async () => {
+      const d = await fetch(`/api/unik?tipo=buscar-nome&q=${encodeURIComponent(q)}`)
+        .then((r) => r.json())
+        .catch(() => null);
+      if (cancelado) return;
+      setSugestoes(asArray(d?.nomes) as NomeAnterior[]);
+      setAtivoIdx(0);
+    }, 250);
+    return () => {
+      cancelado = true;
+      clearTimeout(t);
+    };
+  }, [nome, escolhido]);
+
+  const existeIgual = sugestoes.some((s) => chaveNome(s.nome) === chaveNome(nome));
+  const opcoesLista = nome.trim().length >= 2 ? sugestoes.length + (existeIgual ? 0 : 1) : 0;
+
+  async function escolherAnterior(n: NomeAnterior) {
+    setNome(n.nome);
+    setEscolhido(n);
+    setNovoConfirmado(false);
+    setListaAberta(false);
+    setHintDefaults("");
+    setCusto(moneyInput(n.custo));
+    setSugestaoVenda(moneyInput(n.sugestaoVenda));
+    if (n.categoria) {
+      setCategorias((prev) =>
+        prev.includes(n.categoria)
+          ? prev
+          : [...prev, n.categoria].sort((a, b) => a.localeCompare(b, "pt-BR"))
+      );
+      setCategoria(n.categoria);
+    }
+    setFotoUrl("");
+    if (n.temFoto) {
+      const d = await fetch(`/api/unik?tipo=foto-nome&nome=${encodeURIComponent(n.nome)}`)
+        .then((r) => r.json())
+        .catch(() => null);
+      if (d?.fotoUrl) setFotoUrl(String(d.fotoUrl));
+    }
+  }
+
+  function escolherNovo() {
+    setEscolhido(null);
+    setNovoConfirmado(true);
+    setListaAberta(false);
+  }
+
+  function escolherIdx(i: number) {
+    if (i < sugestoes.length) void escolherAnterior(sugestoes[i]);
+    else escolherNovo();
+  }
+
+  function onNomeKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (!listaAberta || !opcoesLista) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setAtivoIdx((i) => (i + 1) % opcoesLista);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setAtivoIdx((i) => (i - 1 + opcoesLista) % opcoesLista);
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      escolherIdx(ativoIdx);
+    } else if (e.key === "Escape") {
+      setListaAberta(false);
+    }
+  }
 
   async function carregarLancamentos() {
     const d = await fetch("/api/unik?tipo=lancamentos").then((r) => r.json());
@@ -154,6 +251,7 @@ export default function EntregaUnikPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           nome: nome.trim(),
+          sku: escolhido?.sku || undefined,
           unidade,
           quantidade: Number(String(quantidade).replace(",", ".")),
           status,
@@ -171,6 +269,9 @@ export default function EntregaUnikPage() {
         return;
       }
       setMsg(dataRes.message);
+      setNome("");
+      setEscolhido(null);
+      setNovoConfirmado(false);
       setQuantidade("1");
       setFotoUrl("");
       setCusto("");
@@ -192,17 +293,89 @@ export default function EntregaUnikPage() {
         <h2>Entrega ou retirada</h2>
         <div className="grid-2">
           <div>
-            <div className="field">
+            <div className="field busca-nome">
               <label>Nome UNIK</label>
               <input
                 value={nome}
                 onChange={(e) => {
                   setNome(e.target.value);
+                  setEscolhido(null);
+                  setNovoConfirmado(false);
                   setHintDefaults("");
+                  setListaAberta(true);
                 }}
-                onBlur={() => void puxarDefaultsPorNome(nome)}
-                placeholder="Nome como veio na entrega"
+                onFocus={() => setListaAberta(true)}
+                onKeyDown={onNomeKeyDown}
+                onBlur={() => {
+                  setListaAberta(false);
+                  if (escolhido) return;
+                  const igual = sugestoes.find((s) => chaveNome(s.nome) === chaveNome(nome));
+                  if (igual) void escolherAnterior(igual);
+                  else void puxarDefaultsPorNome(nome);
+                }}
+                placeholder="Digite para buscar um item já entregue ou cadastrar novo"
+                autoComplete="off"
               />
+              {listaAberta && opcoesLista > 0 && (
+                <ul className="busca-nome-lista" role="listbox">
+                  {sugestoes.map((s, i) => (
+                    <li
+                      key={s.nome}
+                      role="option"
+                      aria-selected={i === ativoIdx}
+                      className={i === ativoIdx ? "ativo" : ""}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        void escolherAnterior(s);
+                      }}
+                      onMouseEnter={() => setAtivoIdx(i)}
+                    >
+                      <strong>{s.nome}</strong>
+                      <small>
+                        {s.sku ? `${s.sku} · ${s.descricaoItem}` : "sem item vinculado"} · {s.lancamentos} lanç. · último{" "}
+                        {s.ultimaDataFmt || "—"} · custo R$ {formatMoeda(s.custo)} · sugestão R${" "}
+                        {formatMoeda(s.sugestaoVenda)}
+                      </small>
+                    </li>
+                  ))}
+                  {!existeIgual && (
+                    <li
+                      role="option"
+                      aria-selected={ativoIdx === sugestoes.length}
+                      className={`novo${ativoIdx === sugestoes.length ? " ativo" : ""}`}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        escolherNovo();
+                      }}
+                      onMouseEnter={() => setAtivoIdx(sugestoes.length)}
+                    >
+                      + Novo item: “{nome.trim()}”
+                    </li>
+                  )}
+                </ul>
+              )}
+              {escolhido ? (
+                <p className="busca-nome-escolhido">
+                  Já entregue antes ({escolhido.lancamentos} lanç., último {escolhido.ultimaDataFmt || "—"}). Custo,
+                  sugestão, categoria e foto vieram do lançamento anterior — confira e ajuste a quantidade.{" "}
+                  {escolhido.sku ? (
+                    <>
+                      Entra no item <strong>{escolhido.sku} · {escolhido.descricaoItem}</strong> e o estoque atualiza ao
+                      registrar.
+                    </>
+                  ) : (
+                    <>
+                      Ainda sem item vinculado: depois vincule em <Link href="/unik-vincular">Vincular</Link>.
+                    </>
+                  )}
+                  {status === "Encomenda" ? " Na encomenda o custo é o total do lançamento (o preenchido é por unidade)." : ""}
+                </p>
+              ) : novoConfirmado ? (
+                <p className="busca-nome-escolhido">
+                  Item novo. Depois de registrar, vincule este nome a um item do estoque em{" "}
+                  <Link href="/unik-vincular">Vincular</Link>.
+                </p>
+              ) : null}
               {hintDefaults ? <p className="muted">{hintDefaults}</p> : null}
             </div>
             <div className="field">

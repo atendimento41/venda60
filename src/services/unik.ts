@@ -9,7 +9,7 @@ import {
   unikVinculos,
   vendas,
 } from "@/db/schema";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import {
   agoraISO,
   dataYmd,
@@ -521,6 +521,120 @@ export async function defaultsCustoSugestaoPorNomeUnik(nome: string) {
     if (custo && sugestaoVenda) break;
   }
   return { custo, sugestaoVenda, encontrou: custo > 0 || sugestaoVenda > 0 };
+}
+
+export type NomeUnikAnterior = {
+  nome: string;
+  ultimaData: string;
+  ultimaDataFmt: string;
+  lancamentos: number;
+  /** Custo por unidade do lançamento mais recente com valor. */
+  custo: number;
+  sugestaoVenda: number;
+  categoria: string;
+  /** Item em que um novo lançamento com este nome entra (vínculo do nome ou SKU do lançamento mais recente). */
+  sku: string;
+  descricaoItem: string;
+  temFoto: boolean;
+};
+
+/** Nomes já lançados para a busca do UNIK · Lançar (nome, item ou SKU). */
+export async function buscarNomesUnikAnteriores(q: string): Promise<{ nomes: NomeUnikAnterior[] }> {
+  await ensureUnikSchema();
+  const termo = chaveNomeItem(q);
+  if (termo.length < 2) return { nomes: [] };
+  const ctx = await contextoUnik();
+  const entregas = await db
+    .select({
+      id: entregaUnik.id,
+      data: entregaUnik.data,
+      nome: entregaUnik.nome,
+      sku: entregaUnik.sku,
+      status: entregaUnik.status,
+      tipo: entregaUnik.tipo,
+      quantidade: entregaUnik.quantidade,
+      custo: entregaUnik.custo,
+      sugestaoVenda: entregaUnik.sugestaoVenda,
+      categoria: entregaUnik.categoria,
+      temFoto: sql<boolean>`coalesce(${entregaUnik.fotoUrl}, '') <> ''`,
+    })
+    .from(entregaUnik)
+    .orderBy(desc(entregaUnik.id));
+
+  type Grupo = NomeUnikAnterior & { skuDefinido: boolean };
+  const grupos = new Map<string, Grupo>();
+  for (const row of entregas) {
+    const nome = normalizeText(row.nome);
+    const chave = chaveNomeItem(nome);
+    if (!chave) continue;
+    let g = grupos.get(chave);
+    if (!g) {
+      const skuVinculo = normalizeText(ctx.skuPorChave[chave]);
+      g = {
+        nome,
+        ultimaData: row.data || "",
+        ultimaDataFmt: formatDataHoraBR(row.data || ""),
+        lancamentos: 0,
+        custo: 0,
+        sugestaoVenda: 0,
+        categoria: "",
+        sku: skuVinculo,
+        descricaoItem: "",
+        temFoto: false,
+        skuDefinido: Boolean(skuVinculo),
+      };
+      grupos.set(chave, g);
+    }
+    g.lancamentos++;
+    const encomenda = classificarStatusUnik(row.status, row.tipo) === "ENCOMENDA";
+    if (!g.custo) {
+      g.custo = custoUnitarioLancamento(Number(row.custo) || 0, Number(row.quantidade) || 1, encomenda);
+    }
+    if (!g.sugestaoVenda && Number(row.sugestaoVenda) > 0) g.sugestaoVenda = Number(row.sugestaoVenda);
+    if (!g.categoria) g.categoria = normalizeText(row.categoria);
+    if (row.temFoto) g.temFoto = true;
+    if (!g.skuDefinido && !encomenda) {
+      g.sku = normalizeText(row.sku);
+      g.skuDefinido = true;
+    }
+  }
+
+  const nomes: Array<NomeUnikAnterior & { ordem: number }> = [];
+  for (const [chave, g] of grupos) {
+    const item = g.sku ? ctx.itemPorSku[normalizeUpper(g.sku)] : undefined;
+    const itemValido = Boolean(item && item.ativo && campoEhUnik3d(item.subcategoriaMeep));
+    const descricaoItem = itemValido ? item!.descricao : "";
+    const alvo = `${chave} ${chaveNomeItem(descricaoItem)} ${itemValido ? normalizeUpper(g.sku) : ""}`;
+    if (!alvo.includes(termo)) continue;
+    const { skuDefinido: _ignorar, ...resto } = g;
+    nomes.push({
+      ...resto,
+      sku: itemValido ? item!.sku : "",
+      descricaoItem,
+      ordem: chave === termo ? 0 : chave.startsWith(termo) ? 1 : chave.includes(termo) ? 2 : 3,
+    });
+  }
+  nomes.sort((a, b) => a.ordem - b.ordem);
+  return { nomes: nomes.slice(0, 12).map(({ ordem: _ordem, ...n }) => n) };
+}
+
+/** Foto do lançamento mais recente com este nome (para reaproveitar no novo lançamento). */
+export async function fotoUltimoLancamentoPorNomeUnik(nome: string): Promise<{ fotoUrl: string }> {
+  await ensureUnikSchema();
+  const chave = chaveNomeItem(nome);
+  if (!chave) return { fotoUrl: "" };
+  const comFoto = await db
+    .select({ id: entregaUnik.id, nome: entregaUnik.nome })
+    .from(entregaUnik)
+    .where(sql`coalesce(${entregaUnik.fotoUrl}, '') <> ''`)
+    .orderBy(desc(entregaUnik.id));
+  const achou = comFoto.find((r) => chaveNomeItem(r.nome) === chave);
+  if (!achou) return { fotoUrl: "" };
+  const [row] = await db
+    .select({ fotoUrl: entregaUnik.fotoUrl })
+    .from(entregaUnik)
+    .where(eq(entregaUnik.id, achou.id));
+  return { fotoUrl: normalizeText(row?.fotoUrl) };
 }
 
 export async function atualizarLancamentoUnik(dados: {

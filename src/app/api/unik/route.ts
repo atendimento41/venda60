@@ -13,6 +13,8 @@ import {
   listarLancamentosUnik,
   listarCategoriasUnik,
   defaultsCustoSugestaoPorNomeUnik,
+  buscarNomesUnikAnteriores,
+  fotoUltimoLancamentoPorNomeUnik,
   criarCategoriaUnik,
   atualizarLancamentoUnik,
   atualizarLancamentosUnikLote,
@@ -60,6 +62,12 @@ export async function GET(req: Request) {
     }
     if (tipo === "defaults-nome") {
       return NextResponse.json(await defaultsCustoSugestaoPorNomeUnik(searchParams.get("nome") || ""));
+    }
+    if (tipo === "buscar-nome") {
+      return NextResponse.json(await buscarNomesUnikAnteriores(searchParams.get("q") || ""));
+    }
+    if (tipo === "foto-nome") {
+      return NextResponse.json(await fotoUltimoLancamentoPorNomeUnik(searchParams.get("nome") || ""));
     }
     if (tipo === "pendentes") {
       return NextResponse.json(

@@ -1249,6 +1249,57 @@ tr:hover td {
   height: 96px;
 }
 
+.busca-nome {
+  position: relative;
+}
+
+.busca-nome-lista {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 30;
+  margin: 4px 0 0;
+  padding: 4px;
+  list-style: none;
+  max-height: 340px;
+  overflow-y: auto;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+}
+
+.busca-nome-lista li {
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.busca-nome-lista li.ativo,
+.busca-nome-lista li:hover {
+  background: var(--gold-soft);
+}
+
+.busca-nome-lista li small {
+  display: block;
+  color: var(--muted);
+}
+
+.busca-nome-lista li.novo {
+  border-top: 1px solid var(--border);
+  color: var(--gold);
+  font-weight: 700;
+}
+
+.busca-nome-escolhido {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--gold-soft);
+  font-size: 0.9rem;
+}
+
 .btn-file {
   display: block;
   margin-top: 6px;
