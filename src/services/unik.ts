@@ -1472,17 +1472,22 @@ export async function desvincularLancamentoUnik(idBruto: number) {
     .set({ sku: "", estoqueAplicado: false })
     .where(eq(entregaUnik.id, id));
 
-  // Se nenhum outro lançamento deste nome mantém SKU, remove o vínculo nome→item.
+  // O vínculo nome→item religaria este lançamento pelo nome. Grava o SKU nos outros
+  // lançamentos do mesmo nome que dependiam dele e remove o vínculo.
   if (nome) {
     const chave = chaveNomeItem(nome);
-    const entregas = await db.select().from(entregaUnik);
-    const aindaVinculado = entregas.some(
-      (r) => r.id !== id && chaveNomeItem(r.nome) === chave && normalizeText(r.sku)
-    );
-    if (!aindaVinculado) {
+    const skuVinculo = normalizeText(ctx.skuPorChave[chave]);
+    if (skuVinculo) {
+      const entregas = await db.select().from(entregaUnik);
+      for (const r of entregas) {
+        if (r.id === id || chaveNomeItem(r.nome) !== chave || normalizeText(r.sku)) continue;
+        await db.update(entregaUnik).set({ sku: skuVinculo }).where(eq(entregaUnik.id, r.id));
+      }
       await db.delete(unikVinculos).where(eq(unikVinculos.nomeChave, chave));
     }
   }
+
+  await sincronizarCustoSugestaoItemPorSku(sku);
 
   const item = ctx.itemPorSku[normalizeUpper(sku)];
   await registrarLog(
