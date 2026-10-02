@@ -204,6 +204,8 @@ export default function ComissaoPage() {
   const [mes, setMes] = useState(mesAtualISO());
   const [unidade, setUnidade] = useState("");
   const [buscaNome, setBuscaNome] = useState("");
+  const [vendedor, setVendedor] = useState("");
+  const [vendedores, setVendedores] = useState<string[]>([]);
   const [relatorio, setRelatorio] = useState<RelatorioComissao | null>(null);
   const [erro, setErro] = useState("");
   const [carregando, setCarregando] = useState(false);
@@ -214,6 +216,17 @@ export default function ComissaoPage() {
 
   useEffect(() => {
     carregar();
+    Promise.all([
+      apiGet<string[]>("/api/relatorios?tipo=vendedores"),
+      apiGet<string[]>("/api/relatorios?tipo=vendedores&origem=prime"),
+    ]).then(([v, p]) => {
+      const nomes = new Set<string>();
+      for (const n of [...asArray<string>(v.data), ...asArray<string>(p.data)]) {
+        const limpo = String(n).trim();
+        if (limpo) nomes.add(limpo);
+      }
+      setVendedores([...nomes].sort((a, b) => a.localeCompare(b, "pt-BR")));
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -224,6 +237,7 @@ export default function ComissaoPage() {
     setDetalhe(null);
     const q = new URLSearchParams({ tipo: "comissao", mes });
     if (unidade) q.set("unidade", unidade);
+    if (vendedor) q.set("vendedor", vendedor);
     const r = await apiGet<RelatorioComissao>(`/api/relatorios?${q}`);
     setCarregando(false);
     if (r.error) {
@@ -298,6 +312,17 @@ export default function ComissaoPage() {
             ))}
           </select>
         </div>
+        <div className="field">
+          <label>Vendedor</label>
+          <select value={vendedor} onChange={(e) => setVendedor(e.target.value)}>
+            <option value="">Todos</option>
+            {vendedores.map((v) => (
+              <option key={v} value={v}>
+                {v}
+              </option>
+            ))}
+          </select>
+        </div>
         <div className="field" style={{ minWidth: 220, flex: 1 }}>
           <label>Nome</label>
           <input
@@ -320,6 +345,7 @@ export default function ComissaoPage() {
           <h2>
             Comissões · {relatorio.mesRotulo}
             {unidade ? ` · ${unidade}` : ""}
+            {vendedor ? ` · ${vendedor}` : ""}
             {buscaNome.trim() ? ` · “${buscaNome.trim()}”` : ""}
           </h2>
           <div style={{ overflowX: "auto" }}>

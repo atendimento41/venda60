@@ -33,6 +33,7 @@ import {
   vincularNomeUnik,
   vincularNomesUnik,
 } from "@/services/unik";
+import { listarVendedoresNomes } from "@/services/relatorios";
 import { ensureUnikSchema } from "@/lib/ensure-schema";
 import { mensagemErroApi } from "@/lib/api-error";
 
@@ -41,6 +42,9 @@ export async function GET(req: Request) {
     await ensureUnikSchema();
     const { searchParams } = new URL(req.url);
     const tipo = searchParams.get("tipo") || "";
+    if (tipo === "vendedores") {
+      return NextResponse.json(await listarVendedoresNomes());
+    }
     if (searchParams.get("itens") || tipo === "itens") {
       return NextResponse.json(await listarItensParaUnik());
     }
@@ -138,6 +142,7 @@ export async function GET(req: Request) {
         dataFim: searchParams.get("dataFim") || undefined,
         unidade: searchParams.get("unidade") || undefined,
         estoqueAtual: searchParams.get("estoqueAtual") || undefined,
+        vendedor: searchParams.get("vendedor") || undefined,
       })
     );
   } catch (e) {

@@ -1686,8 +1686,10 @@ export async function getUnikConciliacao(filtros: {
   dataFim?: string;
   unidade?: string;
   estoqueAtual?: string;
+  vendedor?: string;
 }) {
   await ensureUnikSchema();
+  const vendedorF = normalizeText(filtros.vendedor || "");
   const allItens = await db.select().from(itens);
   const vinculos = await db.select().from(unikVinculos);
   const skuPorChave = Object.fromEntries(vinculos.map((v) => [v.nomeChave, v.sku]));
@@ -1726,6 +1728,8 @@ export async function getUnikConciliacao(filtros: {
   }
 
   const vendPorSkuUnidade: Record<string, number> = {};
+  /** Com filtro de vendedor, "Vendidos" é só dele; estoque e retiradas seguem a loja inteira. */
+  const vendVendedorPorSkuUnidade: Record<string, number> = {};
   const allVendas = await db.select().from(vendas);
   for (const row of allVendas) {
     if (isVendaCancelada(row.status)) continue;
@@ -1740,6 +1744,9 @@ export async function getUnikConciliacao(filtros: {
     if (qv <= 0) continue;
     const key = `${upV}|${uni}`;
     vendPorSkuUnidade[key] = (vendPorSkuUnidade[key] || 0) + qv;
+    if (vendedorF && normalizeText(row.vendedor || "") === vendedorF) {
+      vendVendedorPorSkuUnidade[key] = (vendVendedorPorSkuUnidade[key] || 0) + qv;
+    }
   }
 
   const estPorSkuUnidade: Record<string, number> = {};
@@ -1753,20 +1760,23 @@ export async function getUnikConciliacao(filtros: {
     estPorSkuUnidade[`${up}|${uni}`] = (estPorSkuUnidade[`${up}|${uni}`] || 0) + (Number(row.quantidade) || 0);
   }
 
-  const chaves = new Set([
-    ...Object.keys(estPorSkuUnidade),
-    ...Object.keys(vendPorSkuUnidade),
-    ...Object.keys(saidasPorSkuUnidade),
-  ]);
+  const chaves = vendedorF
+    ? new Set(Object.keys(vendVendedorPorSkuUnidade))
+    : new Set([
+        ...Object.keys(estPorSkuUnidade),
+        ...Object.keys(vendPorSkuUnidade),
+        ...Object.keys(saidasPorSkuUnidade),
+      ]);
 
   let resumo = [...chaves]
     .map((key) => {
       const [up, uni] = key.split("|");
       const item = itemPorSku[up];
       const estoqueAtual = qtdArred(estPorSkuUnidade[key] || 0);
-      const qtdVendida = qtdArred(vendPorSkuUnidade[key] || 0);
+      const vendidaLoja = qtdArred(vendPorSkuUnidade[key] || 0);
+      const qtdVendida = vendedorF ? qtdArred(vendVendedorPorSkuUnidade[key] || 0) : vendidaLoja;
       const saidasParceiro = qtdArred(saidasPorSkuUnidade[key] || 0);
-      const estoque = qtdArred(estoqueAtual + qtdVendida + saidasParceiro);
+      const estoque = qtdArred(estoqueAtual + vendidaLoja + saidasParceiro);
       const unidade = UNIK_LOJAS.find((u) => normalizeUpper(u) === uni) || uni;
       return {
         sku: item?.sku || up,
@@ -1798,7 +1808,10 @@ export async function getUnikConciliacao(filtros: {
 
   return {
     resumo,
-    formula: "Uma linha por unidade da loja. Nome UNIK vem do lançamento/vínculo. Estoque = atual + vendidos + retiradas. Estoque atual é o saldo de hoje nessa unidade.",
+    vendedor: filtros.vendedor || "",
+    formula: vendedorF
+      ? `Só itens vendidos por ${filtros.vendedor}. Vendidos = vendas dele. Estoque, Retirada e Estoque atual são da loja inteira (Estoque = atual + todas as vendas + retiradas).`
+      : "Uma linha por unidade da loja. Nome UNIK vem do lançamento/vínculo. Estoque = atual + vendidos + retiradas. Estoque atual é o saldo de hoje nessa unidade.",
     avisos: [] as string[],
   };
 }

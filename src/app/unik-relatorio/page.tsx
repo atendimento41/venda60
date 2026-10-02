@@ -20,6 +20,9 @@ type Resumo = {
 export default function UnikRelatorioPage() {
   const [filtroUnidade, setFiltroUnidade] = useState("");
   const [filtroEstoque, setFiltroEstoque] = useState("gt0");
+  const [filtroVendedor, setFiltroVendedor] = useState("");
+  const [vendedores, setVendedores] = useState<string[]>([]);
+  const [vendedorCarregado, setVendedorCarregado] = useState("");
   const [resumo, setResumo] = useState<Resumo[] | null>(null);
   const [formula, setFormula] = useState("");
   const [erro, setErro] = useState("");
@@ -33,6 +36,7 @@ export default function UnikRelatorioPage() {
     const q = new URLSearchParams({ tipo: "relatorio" });
     if (filtroUnidade) q.set("unidade", filtroUnidade);
     if (filtroEstoque) q.set("estoqueAtual", filtroEstoque);
+    if (filtroVendedor) q.set("vendedor", filtroVendedor);
     const d = await fetch(`/api/unik?${q}`).then((r) => r.json());
     setCarregando(false);
     if (d?.error) {
@@ -41,10 +45,14 @@ export default function UnikRelatorioPage() {
     }
     setResumo(asArray(d.resumo));
     setFormula(d.formula || "");
+    setVendedorCarregado(d.vendedor || "");
   }
 
   useEffect(() => {
     carregar();
+    fetch("/api/unik?tipo=vendedores")
+      .then((r) => r.json())
+      .then((d) => setVendedores(asArray(d)));
   }, []);
 
   async function onFotoRelatorio(sku: string, e: React.ChangeEvent<HTMLInputElement>) {
@@ -103,6 +111,17 @@ export default function UnikRelatorioPage() {
             <option value="lt0">Menor que 0</option>
           </select>
         </div>
+        <div className="field">
+          <label>Vendedor</label>
+          <select value={filtroVendedor} onChange={(e) => setFiltroVendedor(e.target.value)}>
+            <option value="">Todos</option>
+            {vendedores.map((v) => (
+              <option key={v} value={v}>
+                {v}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
       <div className="btn-row">
         <button className="btn" onClick={carregar} disabled={carregando}>
@@ -110,7 +129,7 @@ export default function UnikRelatorioPage() {
         </button>
         <ExportPdfButton
           titulo="UNIK · Controle itens"
-          subtitulo={filtroUnidade || "Todas as lojas"}
+          subtitulo={`${filtroUnidade || "Todas as lojas"}${vendedorCarregado ? ` — Vendedor: ${vendedorCarregado}` : ""}`}
           colunas={["Nome estoque", "Nome UNIK", "Unidade", "Estoque", "Retirada", "Vendidos", "Estoque atual"]}
           linhas={(resumo || []).map((r) => [
             r.descricao,
@@ -127,6 +146,7 @@ export default function UnikRelatorioPage() {
       </div>
       {msg && <p className="msg-ok">{msg}</p>}
       {erro && <p className="msg-erro">{erro}</p>}
+      {vendedorCarregado && <p className="muted">{formula}</p>}
 
       {resumo && (
         <div style={{ overflowX: "auto", marginTop: 16 }}>
