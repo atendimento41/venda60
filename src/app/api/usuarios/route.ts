@@ -15,6 +15,15 @@ import {
   statusEmailUsuario,
 } from "@/lib/email-verificacao";
 import { resolverLoginEEmail } from "@/lib/login-email";
+import { LOG_TIPO, registrarLog } from "@/lib/log";
+import { descreverAcesso, descreverMudancaTelas } from "@/lib/telas-diff";
+
+function telasVendas(raw: unknown): string[] | "*" {
+  const p = parsePaginas(raw);
+  if (p === "*") return "*";
+  const validas = new Set(NAV_LINKS.map((l) => l.href));
+  return p.filter((h) => validas.has(h));
+}
 
 function serializarPaginas(raw: unknown): string {
   if (raw === "*" || raw === true) return "*";
@@ -89,12 +98,13 @@ export async function POST(req: Request) {
     if (body.id) {
       const id = Number(body.id);
       const atual = await client.execute({
-        sql: "SELECT login, paginas, unidades, ativo, email, vendedor_id FROM usuarios WHERE id = ? LIMIT 1",
+        sql: "SELECT login, nome, paginas, unidades, ativo, email, vendedor_id FROM usuarios WHERE id = ? LIMIT 1",
         args: [id],
       });
       const row = atual.rows[0] as
         | {
             login: string;
+            nome: string;
             paginas: string;
             unidades?: string;
             ativo: boolean;
@@ -140,6 +150,38 @@ export async function POST(req: Request) {
         avisoEmail = r.aviso;
       }
 
+      if (row) {
+        const mudancaTelas = descreverMudancaTelas(NAV_LINKS, telasVendas(row.paginas), telasVendas(paginas));
+        if (mudancaTelas) {
+          await registrarLog(
+            LOG_TIPO.USUARIO_PERMISSAO,
+            { id, login: loginReal, depois: telasVendas(paginas) },
+            true,
+            `Permissões de ${loginReal} (${nome}) alteradas — ${mudancaTelas}`
+          );
+        }
+        const alteracoes: string[] = [];
+        if (String(row.nome) !== nome) alteracoes.push(`nome: ${row.nome} → ${nome}`);
+        if (Boolean(row.ativo) !== ativo) alteracoes.push(ativo ? "reativado" : "desativado");
+        if (String(row.unidades || "[]") !== unidades) {
+          const novas = parseUnidadesJson(unidades) || [];
+          alteracoes.push(`unidades: ${novas.length ? novas.join(", ") : "todas"}`);
+        }
+        if (String(row.vendedor_id || "") !== String(vendedorId || "")) {
+          alteracoes.push(`vendedor vinculado: ${vendedorId || "nenhum"}`);
+        }
+        if (senha) alteracoes.push("senha redefinida");
+        if ((emailRaw || "") !== (anterior || "")) alteracoes.push(emailRaw ? "e-mail alterado" : "e-mail removido");
+        if (alteracoes.length) {
+          await registrarLog(
+            LOG_TIPO.USUARIO_ALTERACAO,
+            { id, login: loginReal },
+            true,
+            `Usuário ${loginReal} (${nome}): ${alteracoes.join("; ")}`
+          );
+        }
+      }
+
       let message = mudouPermissao || senha
         ? "Usuário atualizado. Ele precisará fazer login novamente."
         : "Usuário atualizado.";
@@ -157,6 +199,13 @@ export async function POST(req: Request) {
     });
     const novoId = await idPorLogin(login);
     if (!novoId) throw new Error("Usuário criado, mas não foi possível obter o ID.");
+
+    await registrarLog(
+      LOG_TIPO.USUARIO_CADASTRO,
+      { id: novoId, login, paginas: telasVendas(paginas) },
+      true,
+      `Usuário ${login} (${nome}) criado com acesso a: ${descreverAcesso(NAV_LINKS, telasVendas(paginas))}`
+    );
 
     let message = "Usuário criado.";
     if (emailRaw) {
