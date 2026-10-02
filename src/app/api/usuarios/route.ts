@@ -18,6 +18,17 @@ import { resolverLoginEEmail } from "@/lib/login-email";
 import { LOG_TIPO, registrarLog } from "@/lib/log";
 import { descreverAcesso, descreverMudancaTelas } from "@/lib/telas-diff";
 
+const PREFIXOS_OUTROS_MODULOS = ["omie:", "fin:", "hub:", "ev:"];
+
+/** A tela só edita as abas do Vendas: as chaves dos outros módulos na mesma coluna paginas ficam como estão. */
+function manterOutrosModulos(paginasAtuais: unknown, paginasVendas: string): string {
+  if (paginasVendas === "*") return "*";
+  const atuais = parsePaginas(paginasAtuais);
+  const outros =
+    atuais === "*" ? [] : atuais.filter((p) => PREFIXOS_OUTROS_MODULOS.some((px) => p.startsWith(px)));
+  return JSON.stringify([...(JSON.parse(paginasVendas) as string[]), ...outros]);
+}
+
 function telasVendas(raw: unknown): string[] | "*" {
   const p = parsePaginas(raw);
   if (p === "*") return "*";
@@ -112,9 +123,15 @@ export async function POST(req: Request) {
             vendedor_id?: string | null;
           }
         | undefined;
+      if (row && parsePaginas(row.paginas) === "*" && paginas !== "*") {
+        throw new Error(
+          "Este usuário tem acesso total (todas as telas de todos os módulos). Para restringir, use a tela Permissões do Hub."
+        );
+      }
+      const paginasFinal = row ? manterOutrosModulos(row.paginas, paginas) : paginas;
       const mudouPermissao =
         row &&
-        (String(row.paginas) !== paginas ||
+        (String(row.paginas) !== paginasFinal ||
           String(row.unidades || "[]") !== unidades ||
           String(row.vendedor_id || "") !== String(vendedorId || "") ||
           Boolean(row.ativo) !== ativo);
@@ -124,13 +141,13 @@ export async function POST(req: Request) {
         if (erroSenha) throw new Error(erroSenha);
         await client.execute({
           sql: "UPDATE usuarios SET nome = ?, paginas = ?, unidades = ?, vendedor_id = ?, ativo = ?, senha_hash = ? WHERE id = ?",
-          args: [nome, paginas, unidades, vendedorId, ativo, hashSenha(senha), id],
+          args: [nome, paginasFinal, unidades, vendedorId, ativo, hashSenha(senha), id],
         });
         await incrementarSessaoVer(id);
       } else {
         await client.execute({
           sql: "UPDATE usuarios SET nome = ?, paginas = ?, unidades = ?, vendedor_id = ?, ativo = ? WHERE id = ?",
-          args: [nome, paginas, unidades, vendedorId, ativo, id],
+          args: [nome, paginasFinal, unidades, vendedorId, ativo, id],
         });
         if (mudouPermissao) await incrementarSessaoVer(id);
       }
