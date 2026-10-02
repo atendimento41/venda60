@@ -24,7 +24,9 @@ export default function SaidasMensalPage() {
   const [categoria, setCategoria] = useState("");
   const [subcategoria, setSubcategoria] = useState("");
   const [somenteComSaida, setSomenteComSaida] = useState("1");
-  const [res, setRes] = useState<{ mesRotulo: string; linhas: LinhaSaida[]; totalSaidas: number; totalEstoqueInicio: number; totalEstoqueFinal: number } | null>(null);
+  const [vendedor, setVendedor] = useState("");
+  const [vendedores, setVendedores] = useState<string[]>([]);
+  const [res, setRes] = useState<{ mesRotulo: string; vendedor?: string; linhas: LinhaSaida[]; totalSaidas: number; totalEstoqueInicio: number; totalEstoqueFinal: number } | null>(null);
   const [itensSel, setItensSel] = useState<string[]>([]);
   const qItens = new URLSearchParams({ tipo: "itens" });
   if (unidade) qItens.set("unidade", unidade);
@@ -34,11 +36,15 @@ export default function SaidasMensalPage() {
 
   useEffect(() => {
     fetch("/api/estoque?opcoes=1").then((r) => r.json()).then(setOpcoes);
+    fetch("/api/relatorios?tipo=vendedores")
+      .then((r) => r.json())
+      .then((d) => setVendedores(asArray(d)));
   }, []);
 
   async function carregar() {
     const q = new URLSearchParams({ tipo: "saidas-mensal", mes, somenteComSaida });
     if (unidade) q.set("unidade", unidade);
+    if (vendedor) q.set("vendedor", vendedor);
     if (categoria) q.set("categoria", categoria);
     if (subcategoria) q.set("subcategoria", subcategoria);
     anexarItensQuery(q, itensSel);
@@ -58,6 +64,12 @@ export default function SaidasMensalPage() {
             {opcoes.unidades.map((u) => <option key={u} value={u}>{u}</option>)}
           </select>
         </div>
+        <div className="field"><label>Vendedor</label>
+          <select value={vendedor} onChange={(e) => setVendedor(e.target.value)}>
+            <option value="">Todos</option>
+            {vendedores.map((v) => <option key={v} value={v}>{v}</option>)}
+          </select>
+        </div>
         <div className="field"><label>Categoria</label>
           <select value={categoria} onChange={(e) => { setCategoria(e.target.value); setSubcategoria(""); }}>
             <option value="">Todas</option>
@@ -71,7 +83,7 @@ export default function SaidasMensalPage() {
           </select>
         </div>
         <div className="field"><label>Exibição</label>
-          <select value={somenteComSaida} onChange={(e) => setSomenteComSaida(e.target.value)}>
+          <select value={somenteComSaida} onChange={(e) => setSomenteComSaida(e.target.value)} disabled={Boolean(vendedor)}>
             <option value="1">Somente com saída</option>
             <option value="0">Todos</option>
           </select>
@@ -87,7 +99,7 @@ export default function SaidasMensalPage() {
         <button className="btn" onClick={carregar}>Carregar</button>
         <ExportPdfButton
           titulo="Relatório de Saídas Mensais"
-          subtitulo={res?.mesRotulo || mes}
+          subtitulo={res?.vendedor ? `${res.mesRotulo || mes} — Vendedor: ${res.vendedor}` : res?.mesRotulo || mes}
           colunas={["Unidade", "SKU", "Item", "Categoria", "Sub", "Início", "Saídas", "Final"]}
           linhas={(res?.linhas || []).map((l) => [
             l.unidade,
@@ -119,6 +131,11 @@ export default function SaidasMensalPage() {
       {res && (
         <>
           <p className="muted" style={{ textAlign: "center" }}>Período: {res.mesRotulo}</p>
+          {res.vendedor && (
+            <p className="muted" style={{ textAlign: "center" }}>
+              Saídas: só as vendas de {res.vendedor}. Início e Final: estoque da unidade (todas as vendas).
+            </p>
+          )}
           <table style={{ marginTop: 16 }}>
             <thead><tr><th>Unidade</th><th>SKU</th><th>Item</th><th>Categoria</th><th>Sub</th><th className="num">Início</th><th className="num">Saídas</th><th className="num">Final</th></tr></thead>
             <tbody>

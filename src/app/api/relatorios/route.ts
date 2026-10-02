@@ -63,6 +63,7 @@ export async function GET(req: Request) {
           unidade: searchParams.get("unidade"),
           categoria: searchParams.get("categoria"),
           subcategoria: searchParams.get("subcategoria"),
+          vendedor: searchParams.get("vendedor"),
           somenteComSaida:
             searchParams.get("somenteComSaida") !== "0" &&
             searchParams.get("somenteComSaida") !== "false",
@@ -109,7 +110,9 @@ export async function GET(req: Request) {
       );
     }
     if (tipo === "vendedores") {
-      return NextResponse.json(await listarVendedoresNomes());
+      return NextResponse.json(
+        await listarVendedoresNomes(searchParams.get("origem") === "prime" ? "prime" : undefined)
+      );
     }
     return NextResponse.json({ error: "Tipo inválido" }, { status: 400 });
   } catch (e) {

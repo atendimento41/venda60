@@ -600,9 +600,11 @@ export async function getRelatorioSaidasMensal(filtros: {
   subcategoria?: string | null;
   somenteComSaida?: boolean | string | number;
   itens?: string[];
+  vendedor?: string | null;
 }) {
   const periodo = parseMesFiltro(filtros.mes);
   const unidadeF = normalizeUpper(filtros.unidade || "");
+  const vendedorF = normalizeText(filtros.vendedor || "");
   const catF = normalizeUpper(filtros.categoria || "");
   const subF = normalizeUpper(filtros.subcategoria || "");
   const itensSel = conjuntoItensFiltro(filtros.itens);
@@ -627,6 +629,8 @@ export async function getRelatorioSaidasMensal(filtros: {
   });
 
   const saidasMes: Record<string, number> = {};
+  /** Com filtro de vendedor, a coluna Saídas é só dele; início/final seguem o estoque da unidade (todas as vendas). */
+  const saidasVendedor: Record<string, number> = {};
   const saidasApos: Record<string, number> = {};
   const rotulos: Record<string, { sku: string; unidade: string }> = {};
 
@@ -639,6 +643,9 @@ export async function getRelatorioSaidasMensal(filtros: {
     const key = `${normalizeUpper(row.sku)}||${normalizeUpper(row.unidade)}`;
     rotulos[key] = { sku: row.sku, unidade: row.unidade };
     saidasMes[key] = (saidasMes[key] || 0) + row.quantidade;
+    if (vendedorF && normalizeText(row.vendedor || "") === vendedorF) {
+      saidasVendedor[key] = (saidasVendedor[key] || 0) + row.quantidade;
+    }
   }
 
   for (const row of vendasApos.rows) {
@@ -665,8 +672,8 @@ export async function getRelatorioSaidasMensal(filtros: {
     rotulos[key] = { sku: row.sku, unidade: row.unidade };
   }
 
-  const chaves = new Set<string>(Object.keys(saidasMes));
-  if (!somenteComSaida) Object.keys(estoqueAtual).forEach((k) => chaves.add(k));
+  const chaves = new Set<string>(Object.keys(vendedorF ? saidasVendedor : saidasMes));
+  if (!somenteComSaida && !vendedorF) Object.keys(estoqueAtual).forEach((k) => chaves.add(k));
   if (itensSel) {
     for (const k of [...chaves]) {
       if (!itensSel.has(k.split("||")[0])) chaves.delete(k);
@@ -679,12 +686,13 @@ export async function getRelatorioSaidasMensal(filtros: {
   let totalFinal = 0;
 
   for (const key of chaves) {
-    const saidas = saidasMes[key] || 0;
+    const saidasTodas = saidasMes[key] || 0;
+    const saidas = vendedorF ? saidasVendedor[key] || 0 : saidasTodas;
     const atual = estoqueAtual[key] || 0;
     const estoqueFinal = periodo.mesCorrente ? atual : atual + (saidasApos[key] || 0);
-    const estoqueInicio = estoqueFinal + saidas;
+    const estoqueInicio = estoqueFinal + saidasTodas;
 
-    if (somenteComSaida && saidas <= 0) continue;
+    if ((somenteComSaida || vendedorF) && saidas <= 0) continue;
     if (!somenteComSaida && saidas <= 0 && estoqueFinal <= 0) continue;
 
     const rot = rotulos[key];
@@ -715,6 +723,7 @@ export async function getRelatorioSaidasMensal(filtros: {
     mes: filtros.mes,
     mesRotulo: periodo.rotulo,
     mesCorrente: periodo.mesCorrente,
+    vendedor: filtros.vendedor || "",
     linhas,
     totalLinhas: linhas.length,
     totalSaidas,
@@ -723,10 +732,11 @@ export async function getRelatorioSaidasMensal(filtros: {
   };
 }
 
-export async function listarVendedoresNomes() {
+export async function listarVendedoresNomes(origem?: "prime") {
   const client = getClient();
+  const tabela = origem === "prime" ? "prime_vendas" : "vendas";
   const result = await client.execute(
-    `SELECT DISTINCT vendedor FROM vendas WHERE vendedor IS NOT NULL AND vendedor != '' ORDER BY vendedor`
+    `SELECT DISTINCT vendedor FROM ${tabela} WHERE vendedor IS NOT NULL AND vendedor != '' ORDER BY vendedor`
   );
   return result.rows.map((r) => String(r.vendedor)).filter(Boolean);
 }

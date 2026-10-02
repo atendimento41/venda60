@@ -10,13 +10,22 @@ export default function RelatorioPrimePage() {
   const [dataInicio, setDataInicio] = useState(hojeISO().slice(0, 8) + "01");
   const [dataFim, setDataFim] = useState(hojeISO());
   const [unidade, setUnidade] = useState("");
+  const [vendedor, setVendedor] = useState("");
+  const [vendedores, setVendedores] = useState<string[]>([]);
   const [vendas, setVendas] = useState<VendaPeriodo[] | null>(null);
   const [itensSel, setItensSel] = useState<string[]>([]);
   const itensOpcoes = useOpcoesItens("/api/relatorios?tipo=itens&categoria=PRIME", itensSel, setItensSel);
 
+  useEffect(() => {
+    fetch("/api/relatorios?tipo=vendedores&origem=prime")
+      .then((r) => r.json())
+      .then((d) => setVendedores(asArray(d)));
+  }, []);
+
   async function carregar() {
     const q = new URLSearchParams({ dataInicio, dataFim });
     if (unidade) q.set("unidade", unidade);
+    if (vendedor) q.set("vendedor", vendedor);
     anexarItensQuery(q, itensSel);
     const d = await fetch(`/api/prime?${q}`).then((r) => r.json());
     if (d && !d.error) setVendas(asArray<VendaPeriodo>(d.vendas));
@@ -44,6 +53,17 @@ export default function RelatorioPrimePage() {
             {UNIDADES.map((u) => (
               <option key={u} value={u}>
                 {u}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="field">
+          <label>Vendedor</label>
+          <select value={vendedor} onChange={(e) => setVendedor(e.target.value)}>
+            <option value="">Todos</option>
+            {vendedores.map((v) => (
+              <option key={v} value={v}>
+                {v}
               </option>
             ))}
           </select>
